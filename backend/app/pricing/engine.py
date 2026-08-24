@@ -46,11 +46,20 @@ class PricingError(Exception):
     pass
 
 
+import re
+
+POSTAL_CODE_REGEX = re.compile(r"^[1-9][0-9]{5}$")
+
+
 def resolve_area_by_postal_code(db: Session, postal_code: str) -> Area:
     """Resolve a postal code to an area (and its zone)."""
-    area = db.query(Area).filter(Area.postal_code == postal_code).first()
+    clean_code = postal_code.strip() if postal_code else ""
+    if not clean_code or not POSTAL_CODE_REGEX.match(clean_code):
+        raise PricingError(f"Invalid postal code format '{postal_code}'. Must be a 6-digit Indian PIN code.")
+
+    area = db.query(Area).filter(Area.postal_code == clean_code).first()
     if not area:
-        raise PricingError(f"Unknown postal code: {postal_code}")
+        raise PricingError(f"Postal code {clean_code} is not currently serviceable/configured.")
     return area
 
 

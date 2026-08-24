@@ -71,13 +71,23 @@ def list_areas(zone_id: int = None, db: Session = Depends(get_db), _: User = Dep
     return query.all()
 
 
+import re
+
+POSTAL_CODE_REGEX = re.compile(r"^[1-9][0-9]{5}$")
+
+
 @router.post("/areas", response_model=AreaResponse, status_code=status.HTTP_201_CREATED)
 def create_area(payload: AreaCreate, db: Session = Depends(get_db), _: User = Depends(get_current_admin)):
+    clean_code = payload.postal_code.strip() if payload.postal_code else ""
+    if not clean_code or not POSTAL_CODE_REGEX.match(clean_code):
+        raise HTTPException(status_code=400, detail=f"Invalid postal code format '{payload.postal_code}'. Must be a 6-digit Indian PIN code.")
     if not db.query(Zone).filter(Zone.id == payload.zone_id).first():
         raise HTTPException(status_code=400, detail="Zone not found")
-    if db.query(Area).filter(Area.postal_code == payload.postal_code).first():
+    if db.query(Area).filter(Area.postal_code == clean_code).first():
         raise HTTPException(status_code=400, detail="Postal code already registered")
-    area = Area(**payload.model_dump())
+    data = payload.model_dump()
+    data['postal_code'] = clean_code
+    area = Area(**data)
     db.add(area)
     db.commit()
     db.refresh(area)
@@ -97,7 +107,17 @@ def update_area(area_id: int, payload: AreaUpdate, db: Session = Depends(get_db)
     area = db.query(Area).filter(Area.id == area_id).first()
     if not area:
         raise HTTPException(status_code=404, detail="Area not found")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    if 'postal_code' in data and data['postal_code']:
+        clean_code = data['postal_code'].strip()
+        if not POSTAL_CODE_REGEX.match(clean_code):
+            raise HTTPException(status_code=400, detail=f"Invalid postal code format '{data['postal_code']}'. Must be a 6-digit Indian PIN code.")
+        existing = db.query(Area).filter(Area.postal_code == clean_code, Area.id != area_id).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Postal code already registered to another area")
+        data['postal_code'] = clean_code
+
+    for key, value in data.items():
         setattr(area, key, value)
     db.commit()
     db.refresh(area)

@@ -147,7 +147,7 @@ class TestBackendAuthentication:
 
         admin_resp = client.get("/admin/agents", headers={"Authorization": f"Bearer {token}"})
         assert admin_resp.status_code == 403, admin_resp.text
-        assert "Admin access required" in admin_resp.json()["detail"]
+        assert "Access denied" in admin_resp.json()["detail"]
 
     def test_agent_blocked_from_admin_endpoints(self, seeded_client):
         """Agent token attempting to access /admin/orders gets 403 Forbidden."""

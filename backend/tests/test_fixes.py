@@ -38,7 +38,7 @@ from app.models import (
     Order, OrderType, PaymentType, OrderStatus,
     DeliveryAttempt, DeliveryAttemptStatus, Assignment, AssignmentType,
     RateCardVersion, RateRule, CodRule, MovementType,
-    TrackingEvent, TrackingEventType, Area, NotificationOutbox, NotificationStatus,
+    TrackingEvent, TrackingEventType, Area, NotificationOutbox, NotificationChannel, NotificationStatus,
 )
 from app.pricing.engine import get_active_rate_card, PricingError, calculate_price
 from app.orders.schemas import OrderCreate
@@ -445,3 +445,127 @@ class TestRateCardAndValidation:
         # Test negative weight
         p2 = dict(base_payload, actual_weight="-1")
         assert client.post("/orders", json=p2, headers=headers).status_code == 422
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Notification Recipients & Contact Validation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNotificationRecipientsAndChannels:
+    """Notification contact resolution and channel queuing tests."""
+
+    def test_status_change_queues_email_and_sms_with_actual_contact_details(self, db_session):
+        """Status change queues both EMAIL and SMS using actual customer email and phone."""
+        from app.dependencies import get_password_hash
+        from app.tracking.service import create_status_change_event_and_notification
+        from app.notifications.service import process_pending_notifications
+
+        cust = User(
+            email="actualcust@domain.com",
+            hashed_password=get_password_hash("pass"),
+            full_name="Actual Customer",
+            phone="9876543210",
+            role=UserRole.CUSTOMER,
+        )
+        db_session.add(cust)
+        db_session.flush()
+
+        order = Order(
+            customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"),
+            order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            current_status=OrderStatus.CREATED,
+        )
+        db_session.add(order)
+        db_session.commit()
+
+        create_status_change_event_and_notification(
+            db=db_session,
+            order=order,
+            event_type=TrackingEventType.ORDER_CONFIRMED,
+            previous_status="CREATED",
+            new_status="CONFIRMED",
+        )
+        db_session.commit()
+
+        notifs = db_session.query(NotificationOutbox).filter(NotificationOutbox.order_id == order.id).all()
+        assert len(notifs) == 2, f"Expected 2 outbox entries (EMAIL + SMS), got {len(notifs)}"
+
+        channels = {n.channel for n in notifs}
+        assert NotificationChannel.EMAIL in channels
+        assert NotificationChannel.SMS in channels
+
+        email_notif = next(n for n in notifs if n.channel == NotificationChannel.EMAIL)
+        sms_notif = next(n for n in notifs if n.channel == NotificationChannel.SMS)
+
+        import json
+        email_payload = json.loads(email_notif.payload)
+        sms_payload = json.loads(sms_notif.payload)
+
+        assert email_payload.get("email") == "actualcust@domain.com"
+        assert sms_payload.get("phone") == "9876543210"
+
+        # Process outbox and verify no placeholders used
+        results = process_pending_notifications(db_session)
+        assert results["sent"] == 2
+
+    def test_customer_without_phone_does_not_generate_bogus_sms(self, db_session):
+        """Customer without phone queues EMAIL and skips SMS cleanly without dummy number."""
+        from app.dependencies import get_password_hash
+        from app.tracking.service import create_status_change_event_and_notification
+        from app.notifications.service import process_pending_notifications
+
+        cust = User(
+            email="nophone@domain.com",
+            hashed_password=get_password_hash("pass"),
+            full_name="No Phone Customer",
+            phone=None,
+            role=UserRole.CUSTOMER,
+        )
+        db_session.add(cust)
+        db_session.flush()
+
+        order = Order(
+            customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"),
+            order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            current_status=OrderStatus.CREATED,
+        )
+        db_session.add(order)
+        db_session.commit()
+
+        create_status_change_event_and_notification(
+            db=db_session,
+            order=order,
+            event_type=TrackingEventType.ORDER_CONFIRMED,
+            previous_status="CREATED",
+            new_status="CONFIRMED",
+        )
+        db_session.commit()
+
+        notifs = db_session.query(NotificationOutbox).filter(NotificationOutbox.order_id == order.id).all()
+        # SMS should not be queued when customer has no phone
+        sms_notifs = [n for n in notifs if n.channel == NotificationChannel.SMS]
+        assert len(sms_notifs) == 0, "SMS must NOT be queued for customers without a phone number"
+
+        results = process_pending_notifications(db_session)
+        assert results["sent"] == 1
+
+    def test_providers_reject_missing_recipient_without_placeholders(self):
+        """SmtpEmailProvider and TwilioSmsProvider raise ValueError when recipient contact is missing (no placeholders)."""
+        from app.notifications.providers import SmtpEmailProvider, TwilioSmsProvider
+
+        email_provider = SmtpEmailProvider()
+        with pytest.raises(ValueError, match="Recipient email address is missing"):
+            email_provider.send("EMAIL", "template", {})
+
+        sms_provider = TwilioSmsProvider()
+        with pytest.raises(ValueError, match="Recipient phone number is missing"):
+            sms_provider.send("SMS", "template", {})
+

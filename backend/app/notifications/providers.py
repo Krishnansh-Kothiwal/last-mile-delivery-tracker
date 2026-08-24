@@ -16,14 +16,19 @@ class NotificationProvider:
 class ConsoleProvider(NotificationProvider):
     """Development provider - prints to stdout/logs."""
     def send(self, channel: str, template: str, payload: Optional[dict]) -> bool:
-        logger.info(f"[NOTIFICATION] Channel={channel} Template={template} Payload={json.dumps(payload)}")
-        print(f"📬 [NOTIFICATION] Channel={channel} Template={template} Payload={json.dumps(payload)}")
+        recipient = payload.get("email") if channel == "EMAIL" else payload.get("phone") if payload else None
+        logger.info(f"[NOTIFICATION CONSOLE] Channel={channel} To={recipient} Template={template} Payload={json.dumps(payload)}")
+        print(f"📬 [NOTIFICATION CONSOLE] Channel={channel} To={recipient} Template={template} Payload={json.dumps(payload)}")
         return True
 
 
 class SmtpEmailProvider(NotificationProvider):
     """SMTP Email Provider using Python standard library smtplib."""
     def send(self, channel: str, template: str, payload: Optional[dict]) -> bool:
+        to_email = payload.get("email") if payload else None
+        if not to_email or not str(to_email).strip():
+            raise ValueError("Recipient email address is missing")
+
         if not settings.SMTP_HOST:
             logger.warning("[SMTP] SMTP_HOST not configured, falling back to console.")
             return ConsoleProvider().send(channel, template, payload)
@@ -31,7 +36,6 @@ class SmtpEmailProvider(NotificationProvider):
             import smtplib
             from email.mime.text import MIMEText
 
-            to_email = payload.get("email", "customer@example.com") if payload else "customer@example.com"
             body = f"Notification Template: {template}\n\nPayload Details:\n{json.dumps(payload, indent=2)}"
 
             msg = MIMEText(body)
@@ -56,6 +60,10 @@ class SmtpEmailProvider(NotificationProvider):
 class TwilioSmsProvider(NotificationProvider):
     """SMS Provider using Twilio REST API via stdlib urllib.request."""
     def send(self, channel: str, template: str, payload: Optional[dict]) -> bool:
+        to_phone = payload.get("phone") if payload else None
+        if not to_phone or not str(to_phone).strip():
+            raise ValueError("Recipient phone number is missing")
+
         if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
             logger.warning("[TWILIO SMS] Credentials not configured, falling back to console.")
             return ConsoleProvider().send(channel, template, payload)
@@ -64,7 +72,6 @@ class TwilioSmsProvider(NotificationProvider):
             import urllib.parse
             import base64
 
-            to_phone = payload.get("phone", "+10000000000") if payload else "+10000000000"
             body = f"Delivery Update [{template}]: {json.dumps(payload)}"
 
             url = f"https://api.twilio.com/2010-04-01/Accounts/{settings.TWILIO_ACCOUNT_SID}/Messages.json"

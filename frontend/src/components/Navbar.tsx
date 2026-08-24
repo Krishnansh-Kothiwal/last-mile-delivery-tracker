@@ -119,14 +119,7 @@ export default function Navbar() {
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
-          ) : (
-            <Link
-              href="/"
-              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition shadow-md shadow-blue-600/20"
-            >
-              Sign In
-            </Link>
-          )}
+          ) : null}
         </div>
       </div>
     </header>

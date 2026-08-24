@@ -69,7 +69,7 @@ def create_status_change_event_and_notification(
     metadata: Optional[dict] = None,
 ) -> TrackingEvent:
     """
-    Create a tracking event AND queue a notification in a single call.
+    Create a tracking event AND queue notifications (EMAIL and SMS) in a single call.
     Both writes happen inside the caller's transaction.
     """
     event = create_tracking_event(
@@ -84,18 +84,39 @@ def create_status_change_event_and_notification(
         metadata=metadata,
     )
 
+    # Fetch customer User to resolve actual contact details
+    from app.models import User
+    customer = db.query(User).filter(User.id == order.customer_id).first()
+    customer_email = customer.email if customer else None
+    customer_phone = customer.phone if (customer and customer.phone and customer.phone.strip()) else None
+
+    payload_base = {
+        "order_id": order.id,
+        "previous_status": previous_status,
+        "new_status": new_status,
+        "event_type": event_type.value,
+    }
+
+    # Queue EMAIL notification
     queue_notification(
         db=db,
         order_id=order.id,
         customer_id=order.customer_id,
         template=f"status_change_{new_status.lower()}",
-        payload={
-            "order_id": order.id,
-            "previous_status": previous_status,
-            "new_status": new_status,
-            "event_type": event_type.value,
-        },
+        channel=NotificationChannel.EMAIL,
+        payload=dict(payload_base, email=customer_email) if customer_email else payload_base,
     )
+
+    # Queue SMS notification if customer has a phone number
+    if customer_phone:
+        queue_notification(
+            db=db,
+            order_id=order.id,
+            customer_id=order.customer_id,
+            template=f"status_change_{new_status.lower()}",
+            channel=NotificationChannel.SMS,
+            payload=dict(payload_base, phone=customer_phone),
+        )
 
     return event
 

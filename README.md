@@ -275,7 +275,7 @@ Tests cover:
 
 - **Database**: Replace `sqlite:///./delivery_tracker.db` with a PostgreSQL URL in `DATABASE_URL`. Run `alembic upgrade head` on first deploy.
 - **Secret key**: Set a strong random `SECRET_KEY` (e.g. `openssl rand -hex 32`).
-- **Notifications**: The `EmailProvider` and `SMSProvider` in `backend/app/notifications/providers.py` are console stubs. Swap in SMTP/SendGrid (email) and Twilio (SMS) credentials via environment variables before going live.
+- **Notifications**: Supports built-in console logging fallback in development (`EMAIL_PROVIDER=console`, `SMS_PROVIDER=console`), standard SMTP email dispatch (`EMAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`), and Twilio SMS dispatch (`SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`).
 - **CORS**: Update `allow_origins` in `backend/app/main.py` to your production frontend URL.
 - **Frontend**: Run `npm run build` then serve the `.next` output with a Node server or deploy to Vercel.
 - **Do not commit**: `.env`, `node_modules/`, `.next/`, `delivery_tracker.db`, `__pycache__/`, `.pytest_cache/`.

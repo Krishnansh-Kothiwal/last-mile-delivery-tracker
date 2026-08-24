@@ -280,7 +280,6 @@ def reschedule_order(
             },
         )
         db.commit()
-        db.commit()
 
     return reschedule
 

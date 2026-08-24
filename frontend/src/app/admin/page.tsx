@@ -41,6 +41,21 @@ interface RateCard {
   }>;
 }
 
+interface ActiveAssignment {
+  assignment_id: number;
+  order_id: number;
+  order_status: string;
+  pickup_address: string;
+  pickup_postal_code: string;
+  drop_address: string;
+  drop_postal_code: string;
+  order_type: string;
+  payment_type: string;
+  assigned_at: string;
+  customer_name: string | null;
+  customer_email: string | null;
+}
+
 interface Agent {
   id: number;
   user_id: number;
@@ -51,6 +66,7 @@ interface Agent {
   active_delivery_count: number;
   max_concurrent_deliveries: number;
   last_location_update?: string;
+  active_assignments: ActiveAssignment[];
 }
 
 interface Order {
@@ -96,6 +112,9 @@ export default function AdminControlCenter() {
   const [overrideReason, setOverrideReason] = useState<string>('Admin manual correction');
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Agent Fleet: which agent card is expanded to show assignments
+  const [expandedAgentId, setExpandedAgentId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') {
@@ -462,27 +481,105 @@ export default function AdminControlCenter() {
         <div className="glass-panel rounded-2xl p-6 border border-gray-800 space-y-4">
           <h2 className="text-base font-bold text-white">Agent Fleet ({agents.length})</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {agents.map((ag) => (
-              <div key={ag.id} className="p-4 bg-gray-900/60 rounded-xl border border-gray-800 text-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-white">{ag.full_name || `Agent #${ag.id}`}</span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                    ag.availability_status === 'AVAILABLE'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : ag.availability_status === 'UNAVAILABLE'
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      : 'bg-gray-700 text-gray-400'
-                  }`}>
-                    {ag.availability_status}
-                  </span>
+            {agents.map((ag) => {
+              const isExpanded = expandedAgentId === ag.id;
+              const assignmentCount = ag.active_assignments?.length ?? 0;
+              return (
+                <div
+                  key={ag.id}
+                  className={`bg-gray-900/60 rounded-xl border text-xs transition ${
+                    isExpanded ? 'border-purple-500/40' : 'border-gray-800 hover:border-gray-700'
+                  }`}
+                >
+                  {/* Card header — always visible */}
+                  <div className="p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white">{ag.full_name || `Agent #${ag.id}`}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        ag.availability_status === 'AVAILABLE'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : ag.availability_status === 'UNAVAILABLE'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : 'bg-gray-700 text-gray-400'
+                      }`}>
+                        {ag.availability_status}
+                      </span>
+                    </div>
+                    <div className="text-gray-400">{ag.email || '—'}</div>
+                    <div className="text-blue-400 font-mono">
+                      Workload: {assignmentCount} / {ag.max_concurrent_deliveries} active
+                    </div>
+                    {ag.last_location_update && (
+                      <div className="text-gray-600 text-[10px]">
+                        Last GPS: {new Date(ag.last_location_update).toLocaleString()}
+                      </div>
+                    )}
+
+                    {/* Expand/collapse toggle */}
+                    <button
+                      onClick={() => setExpandedAgentId(isExpanded ? null : ag.id)}
+                      className={`w-full mt-1 py-1.5 rounded-lg text-[11px] font-semibold transition flex items-center justify-center gap-1.5 ${
+                        isExpanded
+                          ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30'
+                          : 'bg-gray-800 hover:bg-gray-700 text-gray-400 border border-gray-700'
+                      }`}
+                    >
+                      {isExpanded ? '▲ Hide Assignments' : `▼ View ${assignmentCount} Assignment${assignmentCount !== 1 ? 's' : ''}`}
+                    </button>
+                  </div>
+
+                  {/* Expanded assignment list */}
+                  {isExpanded && (
+                    <div className="border-t border-gray-800 px-4 pb-4 pt-3 space-y-2">
+                      {assignmentCount === 0 ? (
+                        <div className="text-gray-600 italic text-center py-2">No active assignments</div>
+                      ) : (
+                        ag.active_assignments.map((asgn) => (
+                          <div
+                            key={asgn.assignment_id}
+                            className="p-2.5 bg-gray-950/60 rounded-lg border border-gray-800 space-y-1"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono font-bold text-white">Order #{asgn.order_id}</span>
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                                asgn.order_status === 'ASSIGNED'
+                                  ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                  : asgn.order_status === 'PICKED_UP'
+                                  ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                                  : asgn.order_status === 'IN_TRANSIT'
+                                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                                  : asgn.order_status === 'OUT_FOR_DELIVERY'
+                                  ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
+                                  : 'bg-gray-700 text-gray-400'
+                              }`}>
+                                {asgn.order_status}
+                              </span>
+                            </div>
+                            <div className="text-gray-400">
+                              <span className="text-gray-500">Route: </span>
+                              <span className="font-mono">{asgn.pickup_postal_code}</span>
+                              <span className="text-gray-600 mx-1">→</span>
+                              <span className="font-mono">{asgn.drop_postal_code}</span>
+                            </div>
+                            <div className="text-gray-500">
+                              {asgn.order_type} • {asgn.payment_type}
+                            </div>
+                            {asgn.customer_name && (
+                              <div className="text-gray-600 text-[10px]">
+                                Customer: {asgn.customer_name}
+                              </div>
+                            )}
+                            <div className="text-gray-700 text-[10px]">
+                              Assigned: {new Date(asgn.assigned_at).toLocaleString()}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="text-gray-400">{ag.email || '—'}</div>
-                <div className="text-blue-400 font-mono">Workload: {ag.active_delivery_count} / {ag.max_concurrent_deliveries} active</div>
-                {ag.last_location_update && (
-                  <div className="text-gray-600 text-[10px]">Last GPS: {new Date(ag.last_location_update).toLocaleString()}</div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

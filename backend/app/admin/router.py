@@ -381,8 +381,54 @@ def admin_override_status(
 
 @router.get("/agents")
 def admin_list_agents(db: Session = Depends(get_db), _: User = Depends(get_current_admin)):
-    """List all delivery agents with their status."""
+    """List all delivery agents with their status and current active assignments.
+
+    Active assignments are fetched in a single batched query (no N+1).
+    The returned active_delivery_count equals len(active_assignments) so
+    workload count and visible assignment list share the same source of truth.
+    """
     agents = db.query(Agent).options(joinedload(Agent.user)).all()
+
+    if not agents:
+        return []
+
+    agent_ids = [a.id for a in agents]
+
+    # Single batched query for all active assignments across all agents.
+    # Join: Assignment → Order → Order.customer (User) for customer identity.
+    active_assignments_all = (
+        db.query(Assignment)
+        .options(
+            joinedload(Assignment.order).joinedload(Order.customer)
+        )
+        .filter(
+            Assignment.agent_id.in_(agent_ids),
+            Assignment.unassigned_at.is_(None),
+        )
+        .all()
+    )
+
+    # Group assignments by agent_id
+    assignments_by_agent: dict = {aid: [] for aid in agent_ids}
+    for asgn in active_assignments_all:
+        if asgn.order is None:
+            continue
+        entry = {
+            "assignment_id": asgn.id,
+            "order_id": asgn.order_id,
+            "order_status": asgn.order.current_status.value,
+            "pickup_address": asgn.order.pickup_address,
+            "pickup_postal_code": asgn.order.pickup_postal_code,
+            "drop_address": asgn.order.drop_address,
+            "drop_postal_code": asgn.order.drop_postal_code,
+            "order_type": asgn.order.order_type.value,
+            "payment_type": asgn.order.payment_type.value,
+            "assigned_at": str(asgn.assigned_at),
+            "customer_name": asgn.order.customer.full_name if asgn.order.customer else None,
+            "customer_email": asgn.order.customer.email if asgn.order.customer else None,
+        }
+        assignments_by_agent[asgn.agent_id].append(entry)
+
     return [
         {
             "id": a.id,
@@ -391,9 +437,11 @@ def admin_list_agents(db: Session = Depends(get_db), _: User = Depends(get_curre
             "email": a.user.email if a.user else None,
             "availability_status": a.availability_status.value,
             "current_zone_id": a.current_zone_id,
-            "active_delivery_count": a.active_delivery_count,
+            # Use live-queried count so workload == len(active_assignments)
+            "active_delivery_count": len(assignments_by_agent[a.id]),
             "max_concurrent_deliveries": a.max_concurrent_deliveries,
             "last_location_update": str(a.last_location_update) if a.last_location_update else None,
+            "active_assignments": assignments_by_agent[a.id],
         }
         for a in agents
     ]

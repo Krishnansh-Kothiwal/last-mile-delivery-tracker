@@ -169,3 +169,43 @@ class TestBackendAuthentication:
 
         resp = client.get("/admin/agents")
         assert resp.status_code == 401
+
+    def test_customer_registration_success(self, seeded_client):
+        """POST /auth/register creates a CUSTOMER user and profile, then allows immediate login."""
+        client, db = seeded_client
+
+        reg_resp = client.post("/auth/register", json={
+            "email": "newcustomer@example.com",
+            "password": "securepassword123",
+            "full_name": "New Customer",
+            "phone": "9876543210",
+        })
+        assert reg_resp.status_code == 201, reg_resp.text
+        data = reg_resp.json()
+        assert data["email"] == "newcustomer@example.com"
+        assert data["role"] == "CUSTOMER"
+        assert "hashed_password" not in data
+
+        # Verify new customer can log in
+        login_resp = client.post("/auth/login", json={
+            "email": "newcustomer@example.com",
+            "password": "securepassword123",
+        })
+        assert login_resp.status_code == 200
+        token = login_resp.json()["access_token"]
+        me_resp = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert me_resp.status_code == 200
+        assert me_resp.json()["role"] == "CUSTOMER"
+
+    def test_customer_registration_duplicate_email_rejected(self, seeded_client):
+        """POST /auth/register with duplicate email returns 400."""
+        client, db = seeded_client
+
+        resp = client.post("/auth/register", json={
+            "email": "cust@test.com",
+            "password": "password123",
+            "full_name": "Duplicate User",
+            "phone": "9999999999",
+        })
+        assert resp.status_code == 400, resp.text
+        assert "Email already registered" in resp.json()["detail"]

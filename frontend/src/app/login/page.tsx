@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Lock, Mail, Eye, EyeOff, LogIn, AlertCircle, ShieldCheck, UserCheck, Package } from 'lucide-react';
@@ -141,6 +142,15 @@ export default function LoginPage() {
               </>
             )}
           </button>
+
+          <div className="pt-2 text-center border-t border-gray-800">
+            <Link
+              href="/register"
+              className="text-xs text-blue-400 hover:text-blue-300 font-semibold transition"
+            >
+              New customer? Create an account
+            </Link>
+          </div>
         </form>
       </div>
 

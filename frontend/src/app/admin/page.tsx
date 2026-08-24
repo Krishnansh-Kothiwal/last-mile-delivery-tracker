@@ -44,7 +44,8 @@ interface RateCard {
 interface Agent {
   id: number;
   user_id: number;
-  user?: { full_name: string; email: string };
+  full_name: string | null;
+  email: string | null;
   availability_status: string;
   current_zone_id: number;
   active_delivery_count: number;
@@ -64,6 +65,11 @@ interface Order {
   payment_type: string;
   current_status: string;
   created_at: string;
+  assigned_agent?: {
+    agent_id: number;
+    full_name: string | null;
+    email: string | null;
+  } | null;
 }
 
 export default function AdminControlCenter() {
@@ -292,6 +298,15 @@ export default function AdminControlCenter() {
                   <div className="text-gray-500 text-[11px]">
                     {order.order_type} • {order.payment_type} • {order.actual_weight}kg
                   </div>
+                  <div className="text-[11px] mt-0.5">
+                    {order.assigned_agent ? (
+                      <span className="text-emerald-400 font-semibold">
+                        Assigned: {order.assigned_agent.full_name || `Agent #${order.assigned_agent.agent_id}`}
+                      </span>
+                    ) : (
+                      <span className="text-gray-600">Unassigned</span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -450,13 +465,22 @@ export default function AdminControlCenter() {
             {agents.map((ag) => (
               <div key={ag.id} className="p-4 bg-gray-900/60 rounded-xl border border-gray-800 text-xs space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-white">{ag.user?.full_name || `Agent #${ag.id}`}</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <span className="font-bold text-white">{ag.full_name || `Agent #${ag.id}`}</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    ag.availability_status === 'AVAILABLE'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : ag.availability_status === 'UNAVAILABLE'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'bg-gray-700 text-gray-400'
+                  }`}>
                     {ag.availability_status}
                   </span>
                 </div>
-                <div className="text-gray-400">Email: {ag.user?.email}</div>
+                <div className="text-gray-400">{ag.email || '—'}</div>
                 <div className="text-blue-400 font-mono">Workload: {ag.active_delivery_count} / {ag.max_concurrent_deliveries} active</div>
+                {ag.last_location_update && (
+                  <div className="text-gray-600 text-[10px]">Last GPS: {new Date(ag.last_location_update).toLocaleString()}</div>
+                )}
               </div>
             ))}
           </div>
@@ -520,7 +544,7 @@ export default function AdminControlCenter() {
                   <option value="">-- Choose Agent --</option>
                   {agents.map((ag) => (
                     <option key={ag.id} value={ag.id}>
-                      {ag.user?.full_name || `Agent #${ag.id}`} ({ag.active_delivery_count}/{ag.max_concurrent_deliveries} active)
+                      {ag.full_name || `Agent #${ag.id}`} — {ag.active_delivery_count}/{ag.max_concurrent_deliveries} active — {ag.availability_status}
                     </option>
                   ))}
                 </select>

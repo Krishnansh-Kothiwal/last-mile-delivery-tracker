@@ -67,12 +67,18 @@ def get_agent_profile(
     current_user: User = Depends(get_current_agent),
 ):
     """Return the current agent's profile details."""
-    agent = _get_agent_profile(db, current_user)
+    agent = db.query(Agent).options(joinedload(Agent.user)).filter(Agent.user_id == current_user.id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent profile not found")
     return {
         "id": agent.id,
+        "user_id": agent.user_id,
+        "full_name": agent.user.full_name if agent.user else None,
+        "email": agent.user.email if agent.user else None,
         "availability_status": agent.availability_status.value,
         "active_delivery_count": agent.active_delivery_count,
         "max_concurrent_deliveries": agent.max_concurrent_deliveries,
+        "current_zone_id": agent.current_zone_id,
         "last_location_update": str(agent.last_location_update) if agent.last_location_update else None,
     }
 

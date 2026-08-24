@@ -11,7 +11,7 @@ from app.models import (
     RateCardVersion, RateRule, CodRule, TrackingEventType,
     Assignment, TrackingEvent,
 )
-from app.orders.schemas import OrderResponse, OrderListResponse, AdminOrderCreate
+from app.orders.schemas import OrderResponse, AdminOrderCreate
 from app.orders.service import create_order
 from app.orders.state_machine import validate_transition, IllegalTransitionError
 from app.dispatch.engine import auto_assign_order, manual_assign_order
@@ -153,7 +153,7 @@ def delete_cod_rule(rule_id: int, db: Session = Depends(get_db), _: User = Depen
 
 # ─── Admin Orders ─────────────────────────────────────────────────────────────
 
-@router.get("/orders", response_model=OrderListResponse)
+@router.get("/orders")
 def admin_list_orders(
     status: Optional[str] = Query(None),
     zone_id: Optional[int] = Query(None),
@@ -161,7 +161,7 @@ def admin_list_orders(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ):
-    """Admin lists all orders with optional filters (status, zone_id, active agent_id)."""
+    """Admin lists all orders with optional filters. Includes active assigned agent info."""
     query = db.query(Order).options(joinedload(Order.price_snapshot))
     if status:
         query = query.filter(Order.current_status == status)
@@ -170,7 +170,6 @@ def admin_list_orders(
             (Order.pickup_zone_id == zone_id) | (Order.drop_zone_id == zone_id)
         )
     if agent_id:
-        # Filter for active assignment only (unassigned_at IS NULL) to exclude closed/historical assignments
         from sqlalchemy import select as sa_select
         agent_order_subq = sa_select(Assignment.order_id).where(
             Assignment.agent_id == agent_id,
@@ -178,7 +177,77 @@ def admin_list_orders(
         ).distinct()
         query = query.filter(Order.id.in_(agent_order_subq))
     orders = query.order_by(Order.created_at.desc()).all()
-    return OrderListResponse(orders=orders, total=len(orders))
+
+    # Build a map of order_id -> active agent identity
+    order_ids = [o.id for o in orders]
+    assigned_agents_map: dict = {}
+    if order_ids:
+        active_assignments = (
+            db.query(Assignment)
+            .options(joinedload(Assignment.agent).joinedload(Agent.user))
+            .filter(
+                Assignment.order_id.in_(order_ids),
+                Assignment.unassigned_at.is_(None),
+            )
+            .all()
+        )
+        for asgn in active_assignments:
+            if asgn.agent and asgn.agent.user:
+                assigned_agents_map[asgn.order_id] = {
+                    "agent_id": asgn.agent_id,
+                    "full_name": asgn.agent.user.full_name,
+                    "email": asgn.agent.user.email,
+                }
+            elif asgn.agent:
+                assigned_agents_map[asgn.order_id] = {
+                    "agent_id": asgn.agent_id,
+                    "full_name": None,
+                    "email": None,
+                }
+
+    results = []
+    def _decimal_or_none(val):
+        return float(val) if val is not None else None
+
+    for o in orders:
+        snap = None
+        if o.price_snapshot:
+            snap = {
+                "id": o.price_snapshot.id,
+                "actual_weight": _decimal_or_none(o.price_snapshot.actual_weight),
+                "volumetric_weight": _decimal_or_none(o.price_snapshot.volumetric_weight),
+                "billable_weight": _decimal_or_none(o.price_snapshot.billable_weight),
+                "movement_type": o.price_snapshot.movement_type.value if o.price_snapshot.movement_type else None,
+                "base_charge": _decimal_or_none(o.price_snapshot.base_charge),
+                "weight_charge": _decimal_or_none(o.price_snapshot.weight_charge),
+                "cod_surcharge": _decimal_or_none(o.price_snapshot.cod_surcharge),
+                "total_charge": _decimal_or_none(o.price_snapshot.total_charge),
+            }
+        results.append({
+            "id": o.id,
+            "customer_id": o.customer_id,
+            "pickup_address": o.pickup_address,
+            "pickup_postal_code": o.pickup_postal_code,
+            "pickup_area_id": o.pickup_area_id,
+            "pickup_zone_id": o.pickup_zone_id,
+            "drop_address": o.drop_address,
+            "drop_postal_code": o.drop_postal_code,
+            "drop_area_id": o.drop_area_id,
+            "drop_zone_id": o.drop_zone_id,
+            "length": _decimal_or_none(o.length),
+            "breadth": _decimal_or_none(o.breadth),
+            "height": _decimal_or_none(o.height),
+            "actual_weight": _decimal_or_none(o.actual_weight),
+            "order_type": o.order_type.value,
+            "payment_type": o.payment_type.value,
+            "current_status": o.current_status.value,
+            "price_snapshot_id": o.price_snapshot_id,
+            "created_at": str(o.created_at),
+            "confirmed_at": str(o.confirmed_at) if o.confirmed_at else None,
+            "price_snapshot": snap,
+            "assigned_agent": assigned_agents_map.get(o.id),
+        })
+    return {"orders": results, "total": len(results)}
 
 
 @router.post("/orders", response_model=OrderResponse, status_code=201)

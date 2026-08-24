@@ -22,12 +22,16 @@ interface Assignment {
   assigned_at: string;
 }
 
-// Fix #7: AgentProfile loaded from GET /agent/profile
+// AgentProfile loaded from GET /agent/profile
 interface AgentProfile {
   id: number;
+  user_id: number;
+  full_name: string | null;
+  email: string | null;
   availability_status: 'AVAILABLE' | 'UNAVAILABLE' | 'INACTIVE';
   active_delivery_count: number;
   max_concurrent_deliveries: number;
+  current_zone_id?: number | null;
   last_location_update?: string;
 }
 
@@ -189,9 +193,9 @@ export default function AgentPortal() {
       {/* Agent Status Card */}
       <div className="glass-panel rounded-2xl p-6 border border-gray-800 grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div>
-          <span className="text-xs text-gray-400 block mb-1">Agent Persona</span>
-          <div className="text-base font-bold text-white">{user?.full_name}</div>
-          <div className="text-xs text-gray-500">{user?.email}</div>
+          <span className="text-xs text-gray-400 block mb-1">Agent Profile</span>
+          <div className="text-base font-bold text-white">{profile?.full_name || user?.full_name}</div>
+          <div className="text-xs text-gray-500">{profile?.email || user?.email}</div>
         </div>
 
         <div>

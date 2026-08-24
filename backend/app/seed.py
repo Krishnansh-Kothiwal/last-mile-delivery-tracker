@@ -204,4 +204,9 @@ def seed_database():
 
 
 if __name__ == "__main__":
-    seed_database()
+    import sys
+    if "--reset" in sys.argv or "-r" in sys.argv:
+        from app.reset_db import reset_database
+        reset_database()
+    else:
+        seed_database()

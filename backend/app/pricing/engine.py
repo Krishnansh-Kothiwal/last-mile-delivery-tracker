@@ -46,20 +46,41 @@ class PricingError(Exception):
     pass
 
 
+class ServiceabilityError(PricingError):
+    """Raised when a pickup or drop postal code is unsupported / unserviceable."""
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
 import re
 
 POSTAL_CODE_REGEX = re.compile(r"^[1-9][0-9]{5}$")
 
 
-def resolve_area_by_postal_code(db: Session, postal_code: str) -> Area:
-    """Resolve a postal code to an area (and its zone)."""
-    clean_code = postal_code.strip() if postal_code else ""
-    if not clean_code or not POSTAL_CODE_REGEX.match(clean_code):
-        raise PricingError(f"Invalid postal code format '{postal_code}'. Must be a 6-digit Indian PIN code.")
+def resolve_area_by_postal_code(db: Session, postal_code: str, location_type: str = "pickup") -> Area:
+    """Resolve a postal code to an area (and its zone).
 
-    area = db.query(Area).filter(Area.postal_code == clean_code).first()
+    location_type: 'pickup' or 'drop'
+    """
+    clean_code = postal_code.strip() if postal_code else ""
+
+    area = None
+    if clean_code and POSTAL_CODE_REGEX.match(clean_code):
+        area = db.query(Area).filter(Area.postal_code == clean_code).first()
+
     if not area:
-        raise PricingError(f"Postal code {clean_code} is not currently serviceable/configured.")
+        if location_type == "pickup":
+            raise ServiceabilityError(
+                code="UNSERVICEABLE_PICKUP_AREA",
+                message="We don't currently pick up from this area."
+            )
+        else:
+            raise ServiceabilityError(
+                code="UNSERVICEABLE_DROP_AREA",
+                message="We don't currently deliver to this area."
+            )
     return area
 
 
@@ -164,8 +185,8 @@ def calculate_price(
     billable_weight = max(actual_weight, volumetric_weight)
 
     # Step 3: Resolve zones
-    pickup_area = resolve_area_by_postal_code(db, pickup_postal_code)
-    drop_area = resolve_area_by_postal_code(db, drop_postal_code)
+    pickup_area = resolve_area_by_postal_code(db, pickup_postal_code, location_type="pickup")
+    drop_area = resolve_area_by_postal_code(db, drop_postal_code, location_type="drop")
 
     pickup_zone = db.query(Zone).filter(Zone.id == pickup_area.zone_id).first()
     drop_zone = db.query(Zone).filter(Zone.id == drop_area.zone_id).first()

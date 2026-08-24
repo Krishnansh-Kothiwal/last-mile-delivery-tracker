@@ -126,8 +126,8 @@ class TestBengaluruPostalCodeCoverage:
         })
         assert resp.status_code == 400, resp.text
         detail = resp.json()["detail"]
-        assert "560999" in detail
-        assert "not currently serviceable/configured" in detail
+        assert detail["code"] == "UNSERVICEABLE_DROP_AREA"
+        assert detail["message"] == "We don't currently deliver to this area."
 
     def test_malformed_pin_code_rejected(self, seeded_client):
         """Malformed PIN codes ('123', 'ABCDEF', '5600000') are rejected with 400 validation error."""
@@ -141,7 +141,7 @@ class TestBengaluruPostalCodeCoverage:
                 "order_type": "B2C", "payment_type": "PREPAID"
             })
             assert resp.status_code == 400, f"Expected 400 for '{invalid_pin}', got {resp.status_code}"
-            assert "Invalid postal code format" in resp.json()["detail"]
+            assert resp.json()["detail"]["code"] == "UNSERVICEABLE_PICKUP_AREA"
 
     def test_admin_created_postal_code_mapping_usable_immediately(self, seeded_client):
         """Admin creating a new postal code mapping makes it immediately usable for pricing quotes."""
@@ -159,7 +159,7 @@ class TestBengaluruPostalCodeCoverage:
             "order_type": "B2C", "payment_type": "PREPAID"
         })
         assert q0.status_code == 400
-        assert "not currently serviceable" in q0.json()["detail"]
+        assert q0.json()["detail"]["code"] == "UNSERVICEABLE_DROP_AREA"
 
         # Admin adds new Area mapping for 560099
         zone = db.query(Zone).first()

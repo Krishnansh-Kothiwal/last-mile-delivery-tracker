@@ -7,7 +7,7 @@ import { fetchApi } from '@/lib/api';
 import {
   ShieldCheck, MapPin, Truck, Scale, RefreshCw, Zap, UserCheck,
   AlertTriangle, ChevronRight, CheckCircle2, Sliders, Layers,
-  Plus, Trash2, Edit2, X, Check, Search
+  Plus, Trash2, Edit2, X, Check, Search, PackagePlus, DollarSign
 } from 'lucide-react';
 
 interface Zone {
@@ -27,6 +27,7 @@ interface Area {
 
 interface RateRule {
   id: number;
+  rate_card_version_id: number;
   order_type: string;
   movement_type: string;
   min_weight: number | string;
@@ -139,6 +140,31 @@ export default function AdminControlCenter() {
 
   const [submittingArea, setSubmittingArea] = useState(false);
 
+  // Zone Management State
+  const [showAddZoneModal, setShowAddZoneModal] = useState(false);
+  const [newZoneName, setNewZoneName] = useState('');
+  const [newZoneDesc, setNewZoneDesc] = useState('');
+
+  // Rate Rule Edit State
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
+  const [editRuleBase, setEditRuleBase] = useState('');
+  const [editRulePerKg, setEditRulePerKg] = useState('');
+
+  // Admin Create Order State
+  const [showAdminCreateOrderModal, setShowAdminCreateOrderModal] = useState(false);
+  const [adminCustomerId, setAdminCustomerId] = useState<number>(1);
+  const [adminPickupAddr, setAdminPickupAddr] = useState('123 Mg Road');
+  const [adminPickupPostal, setAdminPickupPostal] = useState('560001');
+  const [adminDropAddr, setAdminDropAddr] = useState('456 Jayanagar');
+  const [adminDropPostal, setAdminDropPostal] = useState('560041');
+  const [adminLength, setAdminLength] = useState('20');
+  const [adminBreadth, setAdminBreadth] = useState('15');
+  const [adminHeight, setAdminHeight] = useState('10');
+  const [adminWeight, setAdminWeight] = useState('2.5');
+  const [adminOrderType, setAdminOrderType] = useState('B2C');
+  const [adminPaymentType, setAdminPaymentType] = useState('PREPAID');
+  const [submittingAdminOrder, setSubmittingAdminOrder] = useState(false);
+
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
@@ -231,6 +257,88 @@ export default function AdminControlCenter() {
       loadData();
     } catch (e: any) {
       setMessage({ type: 'error', text: `Status override failed: ${e.message}` });
+    }
+  };
+
+  const handleAdminCreateOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingAdminOrder(true);
+    setMessage(null);
+    try {
+      const newOrder = await fetchApi('/admin/orders', {
+        method: 'POST',
+        body: JSON.stringify({
+          customer_id: Number(adminCustomerId),
+          pickup_address: adminPickupAddr.trim(),
+          pickup_postal_code: adminPickupPostal.trim(),
+          drop_address: adminDropAddr.trim(),
+          drop_postal_code: adminDropPostal.trim(),
+          length: parseFloat(adminLength) || 10,
+          breadth: parseFloat(adminBreadth) || 10,
+          height: parseFloat(adminHeight) || 10,
+          actual_weight: parseFloat(adminWeight) || 1.0,
+          order_type: adminOrderType,
+          payment_type: adminPaymentType,
+        }),
+      });
+      setMessage({ type: 'success', text: `Order #${newOrder.id} created successfully on behalf of Customer #${adminCustomerId}!` });
+      setShowAdminCreateOrderModal(false);
+      loadData();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Failed to create order' });
+    } finally {
+      setSubmittingAdminOrder(false);
+    }
+  };
+
+  const handleCreateZone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newZoneName.trim()) return;
+    setMessage(null);
+    try {
+      await fetchApi('/admin/zones', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newZoneName.trim(),
+          description: newZoneDesc.trim(),
+        }),
+      });
+      setMessage({ type: 'success', text: `Zone ${newZoneName} created successfully!` });
+      setShowAddZoneModal(false);
+      setNewZoneName('');
+      setNewZoneDesc('');
+      loadData();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Failed to create zone' });
+    }
+  };
+
+  const startEditingRateRule = (rule: RateRule) => {
+    setEditingRuleId(rule.id);
+    setEditRuleBase(String(rule.base_charge));
+    setEditRulePerKg(String(rule.per_kg_charge));
+  };
+
+  const handleUpdateRateRule = async (rule: RateRule) => {
+    setMessage(null);
+    try {
+      await fetchApi(`/admin/rate-rules/${rule.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          rate_card_version_id: rule.rate_card_version_id,
+          order_type: rule.order_type,
+          movement_type: rule.movement_type,
+          min_weight: rule.min_weight,
+          max_weight: rule.max_weight,
+          base_charge: parseFloat(editRuleBase) || 0,
+          per_kg_charge: parseFloat(editRulePerKg) || 0,
+        }),
+      });
+      setMessage({ type: 'success', text: `Rate rule updated successfully!` });
+      setEditingRuleId(null);
+      loadData();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Failed to update rate rule' });
     }
   };
 
@@ -335,8 +443,8 @@ export default function AdminControlCenter() {
             message.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400'
           }`}
         >
-          {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-          {message.text}
+          {message.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertTriangle className="w-4 h-4 flex-shrink-0" />}
+          <span>{message.text}</span>
         </div>
       )}
 
@@ -388,9 +496,141 @@ export default function AdminControlCenter() {
       {activeTab === 'dispatch' && (
         <div className="space-y-6">
           <div className="glass-panel rounded-2xl p-6 border border-gray-800 space-y-4">
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <Zap className="w-4 h-4 text-purple-400" /> Active Orders Dispatch Board
-            </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Zap className="w-4 h-4 text-purple-400" /> Active Orders Dispatch Board
+              </h2>
+              <button
+                onClick={() => setShowAdminCreateOrderModal(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-purple-600/20"
+              >
+                <PackagePlus className="w-4 h-4" /> Create Admin Order
+              </button>
+            </div>
+
+            {/* Admin Create Order Modal / Box */}
+            {showAdminCreateOrderModal && (
+              <div className="p-5 bg-gray-950/90 rounded-2xl border border-purple-500/40 space-y-4">
+                <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+                  <span className="font-bold text-white text-sm flex items-center gap-2">
+                    <PackagePlus className="w-4 h-4 text-purple-400" /> Create Order on Behalf of Customer
+                  </span>
+                  <button onClick={() => setShowAdminCreateOrderModal(false)} className="text-gray-500 hover:text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleAdminCreateOrder} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div>
+                    <label className="block text-gray-400 mb-1">Customer User ID</label>
+                    <input
+                      type="number"
+                      value={adminCustomerId}
+                      onChange={(e) => setAdminCustomerId(Number(e.target.value))}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-400 mb-1">Order Type</label>
+                    <select
+                      value={adminOrderType}
+                      onChange={(e) => setAdminOrderType(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                    >
+                      <option value="B2C">B2C</option>
+                      <option value="B2B">B2B</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-400 mb-1">Payment Type</label>
+                    <select
+                      value={adminPaymentType}
+                      onChange={(e) => setAdminPaymentType(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                    >
+                      <option value="PREPAID">PREPAID</option>
+                      <option value="COD">COD</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-400 mb-1">Actual Weight (kg)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={adminWeight}
+                      onChange={(e) => setAdminWeight(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-400 mb-1">Pickup Address</label>
+                    <input
+                      type="text"
+                      value={adminPickupAddr}
+                      onChange={(e) => setAdminPickupAddr(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-400 mb-1">Pickup Postal Code</label>
+                    <input
+                      type="text"
+                      value={adminPickupPostal}
+                      onChange={(e) => setAdminPickupPostal(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-400 mb-1">Drop Address</label>
+                    <input
+                      type="text"
+                      value={adminDropAddr}
+                      onChange={(e) => setAdminDropAddr(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-400 mb-1">Drop Postal Code</label>
+                    <input
+                      type="text"
+                      value={adminDropPostal}
+                      onChange={(e) => setAdminDropPostal(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 lg:col-span-4 flex items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminCreateOrderModal(false)}
+                      className="px-4 py-2 bg-gray-800 text-gray-300 rounded-lg text-xs font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submittingAdminOrder}
+                      className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold shadow-md shadow-purple-600/20"
+                    >
+                      {submittingAdminOrder ? 'Creating...' : 'Create Order'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
 
             <div className="space-y-3">
               {orders.map((o) => (
@@ -589,13 +829,74 @@ export default function AdminControlCenter() {
               </p>
             </div>
 
-            <button
-              onClick={() => setShowAddAreaModal(true)}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-purple-600/20"
-            >
-              <Plus className="w-4 h-4" /> Add Postal Code Mapping
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowAddZoneModal(true)}
+                className="px-3.5 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 rounded-xl font-semibold text-xs transition flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" /> Add Zone
+              </button>
+              <button
+                onClick={() => setShowAddAreaModal(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-purple-600/20"
+              >
+                <Plus className="w-4 h-4" /> Add Postal Code Mapping
+              </button>
+            </div>
           </div>
+
+          {/* Add Zone Modal / Form */}
+          {showAddZoneModal && (
+            <div className="glass-panel p-5 rounded-2xl border border-purple-500/40 space-y-3 bg-gray-950/90">
+              <div className="flex items-center justify-between border-b border-gray-800 pb-2">
+                <span className="font-bold text-white text-sm flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-purple-400" /> Create New Zone
+                </span>
+                <button onClick={() => setShowAddZoneModal(false)} className="text-gray-500 hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateZone} className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-gray-400 mb-1">Zone Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Bengaluru Central"
+                    value={newZoneName}
+                    onChange={(e) => setNewZoneName(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-400 mb-1">Description</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Central Business District & Inner Suburbs"
+                    value={newZoneDesc}
+                    onChange={(e) => setNewZoneDesc(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                  />
+                </div>
+                <div className="sm:col-span-2 flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddZoneModal(false)}
+                    className="px-3 py-1.5 bg-gray-800 text-gray-300 rounded-lg text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold"
+                  >
+                    Create Zone
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
 
           {/* Add Area Modal / Form */}
           {showAddAreaModal && (
@@ -841,7 +1142,12 @@ export default function AdminControlCenter() {
       {/* TAB 4: RATES */}
       {activeTab === 'rates' && (
         <div className="glass-panel rounded-2xl p-6 border border-gray-800 space-y-6">
-          <h2 className="text-base font-bold text-white">Active Rate Cards & Pricing Rules</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <Scale className="w-4 h-4 text-purple-400" /> Active Rate Cards & Deterministic Pricing Rules
+            </h2>
+          </div>
+
           {rateCards.map((card) => (
             <div key={card.id} className="space-y-4">
               <div className="flex items-center gap-2">
@@ -850,14 +1156,73 @@ export default function AdminControlCenter() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {card.rate_rules?.map((rule) => (
-                  <div key={rule.id} className="p-4 bg-gray-900/60 rounded-xl border border-gray-800 text-xs space-y-1">
-                    <div className="font-bold text-blue-400">{rule.order_type} • {rule.movement_type}</div>
-                    <div className="text-gray-300">Base Charge: ₹{Number(rule.base_charge).toFixed(2)}</div>
-                    <div className="text-gray-300">Per KG Rate: ₹{Number(rule.per_kg_charge).toFixed(2)}/kg</div>
-                    <div className="text-gray-500 text-[10px]">Weight Band: {Number(rule.min_weight)}kg - {Number(rule.max_weight)}kg</div>
-                  </div>
-                ))}
+                {card.rate_rules?.map((rule) => {
+                  const isEditingRule = editingRuleId === rule.id;
+                  return (
+                    <div key={rule.id} className="p-4 bg-gray-900/60 rounded-xl border border-gray-800 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="font-bold text-blue-400">{rule.order_type} • {rule.movement_type}</div>
+                        {!isEditingRule && (
+                          <button
+                            onClick={() => startEditingRateRule(rule)}
+                            className="p-1 text-gray-400 hover:text-purple-300 hover:bg-gray-800 rounded transition"
+                            title="Edit Rate Rule"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {isEditingRule ? (
+                        <div className="space-y-2 pt-1">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-gray-400 mb-0.5">Base Charge (₹)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editRuleBase}
+                                onChange={(e) => setEditRuleBase(e.target.value)}
+                                className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white font-mono text-xs outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-400 mb-0.5">Per KG Charge (₹)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editRulePerKg}
+                                onChange={(e) => setEditRulePerKg(e.target.value)}
+                                className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white font-mono text-xs outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 pt-1">
+                            <button
+                              onClick={() => setEditingRuleId(null)}
+                              className="px-2 py-0.5 bg-gray-800 text-gray-300 rounded text-[11px]"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleUpdateRateRule(rule)}
+                              className="px-2.5 py-0.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded text-[11px]"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-gray-300">Base Charge: ₹{Number(rule.base_charge).toFixed(2)}</div>
+                          <div className="text-gray-300">Per KG Rate: ₹{Number(rule.per_kg_charge).toFixed(2)}/kg</div>
+                          <div className="text-gray-500 text-[10px]">Weight Band: {Number(rule.min_weight)}kg - {Number(rule.max_weight)}kg</div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}

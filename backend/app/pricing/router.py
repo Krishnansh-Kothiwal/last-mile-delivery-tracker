@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.pricing.engine import calculate_price, PricingError
+from app.pricing.engine import calculate_price, PricingError, ServiceabilityError
 from app.pricing.schemas import QuoteRequest, QuoteResponse
 
 router = APIRouter()
@@ -24,6 +24,8 @@ def get_quote(payload: QuoteRequest, db: Session = Depends(get_db)):
             order_type=payload.order_type,
             payment_type=payload.payment_type,
         )
+    except ServiceabilityError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
     except PricingError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

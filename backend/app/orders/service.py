@@ -34,10 +34,12 @@ def create_order(
 ) -> Order:
     """Create a new order in CREATED status."""
     # Resolve areas/zones for the order
-    from app.pricing.engine import resolve_area_by_postal_code
+    from app.pricing.engine import resolve_area_by_postal_code, ServiceabilityError
     try:
-        pickup_area = resolve_area_by_postal_code(db, pickup_postal_code)
-        drop_area = resolve_area_by_postal_code(db, drop_postal_code)
+        pickup_area = resolve_area_by_postal_code(db, pickup_postal_code, location_type="pickup")
+        drop_area = resolve_area_by_postal_code(db, drop_postal_code, location_type="drop")
+    except ServiceabilityError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
     except PricingError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

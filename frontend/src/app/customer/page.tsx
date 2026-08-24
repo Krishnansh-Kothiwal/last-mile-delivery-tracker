@@ -6,13 +6,14 @@ import { fetchApi } from '@/lib/api';
 import { Calculator, Package, Clock, Calendar, CheckCircle2, AlertCircle, MapPin, Truck, RefreshCw, ChevronRight, FileText } from 'lucide-react';
 
 interface PricingQuote {
-  volumetric_weight: number;
-  billable_weight: number;
+  actual_weight?: number | string;
+  volumetric_weight: number | string;
+  billable_weight: number | string;
   movement_type: string;
-  base_charge: number;
-  weight_charge: number;
-  cod_surcharge: number;
-  total_charge: number;
+  base_charge: number | string;
+  weight_charge: number | string;
+  cod_surcharge: number | string;
+  total_charge: number | string;
   pickup_zone_name: string;
   drop_zone_name: string;
   rate_card_version_name: string;
@@ -34,15 +35,18 @@ interface Order {
   pickup_postal_code: string;
   drop_address: string;
   drop_postal_code: string;
-  actual_weight: number;
+  actual_weight: number | string;
   order_type: string;
   payment_type: string;
   current_status: string;
   created_at: string;
   price_snapshot?: {
-    total_charge: number;
+    total_charge: number | string;
     movement_type: string;
-    billable_weight: number;
+    billable_weight: number | string;
+    base_charge?: number | string;
+    weight_charge?: number | string;
+    cod_surcharge?: number | string;
   };
 }
 
@@ -122,7 +126,17 @@ export default function CustomerPortal() {
           payment_type: paymentType,
         }),
       });
-      setQuote(res);
+      // Convert Decimal values to numbers at the API boundary before setting state
+      setQuote({
+        ...res,
+        actual_weight: Number(res.actual_weight ?? 0),
+        volumetric_weight: Number(res.volumetric_weight ?? 0),
+        billable_weight: Number(res.billable_weight ?? 0),
+        base_charge: Number(res.base_charge ?? 0),
+        weight_charge: Number(res.weight_charge ?? 0),
+        cod_surcharge: Number(res.cod_surcharge ?? 0),
+        total_charge: Number(res.total_charge ?? 0),
+      });
     } catch (e: any) {
       setMessage({ type: 'error', text: e.message });
     } finally {
@@ -348,16 +362,16 @@ export default function CustomerPortal() {
               <div className="p-4 bg-gray-900/80 rounded-xl border border-blue-500/30 space-y-3">
                 <div className="flex items-center justify-between border-b border-gray-800 pb-2">
                   <span className="text-xs text-gray-400">Total Price Quote</span>
-                  <span className="text-xl font-black text-blue-400">₹{quote.total_charge.toFixed(2)}</span>
+                  <span className="text-xl font-black text-blue-400">₹{Number(quote.total_charge).toFixed(2)}</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-300">
                   <div>Movement: <span className="font-bold text-white">{quote.movement_type}</span></div>
-                  <div>Billable Wt: <span className="font-bold text-white">{quote.billable_weight} kg</span></div>
-                  <div>Volumetric Wt: <span className="font-mono">{quote.volumetric_weight} kg</span></div>
-                  <div>Base Charge: <span className="font-mono">₹{quote.base_charge}</span></div>
-                  <div>Weight Charge: <span className="font-mono">₹{quote.weight_charge}</span></div>
-                  <div>COD Surcharge: <span className="font-mono">₹{quote.cod_surcharge}</span></div>
+                  <div>Billable Wt: <span className="font-bold text-white">{Number(quote.billable_weight).toFixed(2)} kg</span></div>
+                  <div>Volumetric Wt: <span className="font-mono">{Number(quote.volumetric_weight).toFixed(2)} kg</span></div>
+                  <div>Base Charge: <span className="font-mono">₹{Number(quote.base_charge).toFixed(2)}</span></div>
+                  <div>Weight Charge: <span className="font-mono">₹{Number(quote.weight_charge).toFixed(2)}</span></div>
+                  <div>COD Surcharge: <span className="font-mono">₹{Number(quote.cod_surcharge).toFixed(2)}</span></div>
                 </div>
 
                 {/* Pickup/Drop Address Inputs */}

@@ -29,15 +29,15 @@ interface RateCard {
     id: number;
     order_type: string;
     movement_type: string;
-    base_charge: number;
-    per_kg_charge: number;
-    min_weight: number;
-    max_weight: number;
+    base_charge: number | string;
+    per_kg_charge: number | string;
+    min_weight: number | string;
+    max_weight: number | string;
   }>;
   cod_rules: Array<{
     id: number;
     order_type: string;
-    surcharge: number;
+    surcharge: number | string;
   }>;
 }
 
@@ -59,7 +59,7 @@ interface Order {
   pickup_postal_code: string;
   drop_address: string;
   drop_postal_code: string;
-  actual_weight: number;
+  actual_weight: number | string;
   order_type: string;
   payment_type: string;
   current_status: string;
@@ -405,9 +405,9 @@ export default function AdminControlCenter() {
                 {card.rate_rules?.map((rule) => (
                   <div key={rule.id} className="p-4 bg-gray-900/60 rounded-xl border border-gray-800 text-xs space-y-1">
                     <div className="font-bold text-blue-400">{rule.order_type} • {rule.movement_type}</div>
-                    <div className="text-gray-300">Base Charge: ₹{rule.base_charge}</div>
-                    <div className="text-gray-300">Per KG Rate: ₹{rule.per_kg_charge}/kg</div>
-                    <div className="text-gray-500 text-[10px]">Weight Band: {rule.min_weight}kg - {rule.max_weight}kg</div>
+                    <div className="text-gray-300">Base Charge: ₹{Number(rule.base_charge).toFixed(2)}</div>
+                    <div className="text-gray-300">Per KG Rate: ₹{Number(rule.per_kg_charge).toFixed(2)}/kg</div>
+                    <div className="text-gray-500 text-[10px]">Weight Band: {Number(rule.min_weight)}kg - {Number(rule.max_weight)}kg</div>
                   </div>
                 ))}
               </div>

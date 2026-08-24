@@ -17,7 +17,7 @@ interface Assignment {
   pickup_postal_code: string;
   drop_address: string;
   drop_postal_code: string;
-  actual_weight: string;
+  actual_weight: number | string;
   payment_type: string;
   assigned_at: string;
 }

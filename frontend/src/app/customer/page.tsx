@@ -62,7 +62,7 @@ export default function CustomerPortal() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
 
-  // View Mode: 'dashboard' (Main Dashboard with Rate Calculator + 3 Recent Orders) or 'history' (Full Searchable Archive)
+  // View Mode: 'dashboard' or 'history'
   const [viewMode, setViewMode] = useState<'dashboard' | 'history'>('dashboard');
 
   // Search & Filter State for Order History Archive
@@ -71,9 +71,9 @@ export default function CustomerPortal() {
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [paymentFilter, setPaymentFilter] = useState('ALL');
 
-  // Quote Form State
-  const [pickupPostal, setPickupPostal] = useState('560078'); // JP Nagar
-  const [dropPostal, setDropPostal] = useState('560041'); // Jayanagar
+  // Form State
+  const [pickupPostal, setPickupPostal] = useState('560078');
+  const [dropPostal, setDropPostal] = useState('560041');
   const [length, setLength] = useState('40');
   const [breadth, setBreadth] = useState('30');
   const [height, setHeight] = useState('20');
@@ -89,13 +89,13 @@ export default function CustomerPortal() {
   const [placingOrder, setPlacingOrder] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Inline Tracking & History Accordion State
+  // Expanded Order Details & Inline Tracking History State
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
   const [trackingMap, setTrackingMap] = useState<{ [orderId: number]: TrackingEvent[] }>({});
   const [loadingTrackingId, setLoadingTrackingId] = useState<number | null>(null);
   const [trackingErrorMap, setTrackingErrorMap] = useState<{ [orderId: number]: string }>({});
 
-  // Reschedule Form
+  // Reschedule Form State
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [rescheduling, setRescheduling] = useState(false);
@@ -293,7 +293,6 @@ export default function CustomerPortal() {
     }
   };
 
-  // Client-side Filter Logic for Order History Archive
   const filteredOrders = orders.filter((order) => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -323,7 +322,6 @@ export default function CustomerPortal() {
     return true;
   });
 
-  // Recent 3 Orders for Main Dashboard
   const recentOrders = orders.slice(0, 3);
   const isFilterActive = searchQuery.trim() !== '' || statusFilter !== 'ALL' || typeFilter !== 'ALL' || paymentFilter !== 'ALL';
 
@@ -334,7 +332,20 @@ export default function CustomerPortal() {
     setPaymentFilter('ALL');
   };
 
-  // Render a Single Order Card with Inline Expandable Accordion History
+  const getStatusBadgeStyle = (status: string) => {
+    switch (status) {
+      case 'DELIVERED':
+        return 'bg-[#F0FDF4] text-[#15803D] border-[#BBF7D0]';
+      case 'FAILED':
+      case 'CANCELLED':
+        return 'bg-[#FEF2F2] text-[#B91C1C] border-[#FECACA]';
+      case 'AWAITING_RESCHEDULE':
+        return 'bg-[#FFFBEB] text-[#B45309] border-[#FDE68A]';
+      default:
+        return 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]';
+    }
+  };
+
   const renderOrderCard = (order: Order) => {
     const isExpanded = expandedOrderId === order.id;
     const isLoadingHistory = loadingTrackingId === order.id;
@@ -348,35 +359,25 @@ export default function CustomerPortal() {
     return (
       <div
         key={order.id}
-        className={`glass-card rounded-xl border transition overflow-hidden ${
-          isExpanded ? 'border-blue-500/40 bg-gray-900/80' : 'border-gray-800 hover:border-gray-700'
+        className={`bg-white rounded-xl border transition overflow-hidden shadow-sm ${
+          isExpanded ? 'border-[#2563EB]' : 'border-[#E2E8F0] hover:border-[#CBD5E1]'
         }`}
       >
         {/* Order Card Summary Header */}
         <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-white text-sm">Order #{order.id}</span>
-              <span
-                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                  order.current_status === 'DELIVERED'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : order.current_status === 'FAILED' || order.current_status === 'AWAITING_RESCHEDULE'
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                    : isCancelled
-                    ? 'bg-red-500/20 text-red-300 border border-red-500/30'
-                    : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                }`}
-              >
+              <span className="font-mono font-bold text-[#0F172A] text-sm">Order #{order.id}</span>
+              <span className={`px-2.5 py-0.5 rounded text-xs font-bold border ${getStatusBadgeStyle(order.current_status)}`}>
                 {order.current_status}
               </span>
             </div>
 
-            <div className="text-xs text-gray-400 flex items-center gap-2">
-              <MapPin className="w-3.5 h-3.5 text-gray-500" /> {order.pickup_postal_code} → {order.drop_postal_code}
+            <div className="text-xs text-[#475569] flex items-center gap-2 font-medium">
+              <MapPin className="w-3.5 h-3.5 text-[#64748B]" /> {order.pickup_postal_code} → {order.drop_postal_code}
             </div>
 
-            <div className="text-[11px] text-gray-500">
+            <div className="text-xs text-[#64748B]">
               {order.order_type} • {order.payment_type} • {order.actual_weight}kg • {new Date(order.created_at).toLocaleString()}
             </div>
           </div>
@@ -386,7 +387,7 @@ export default function CustomerPortal() {
               <button
                 onClick={() => handleCancelOrder(order.id)}
                 disabled={cancellingOrderId === order.id}
-                className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 rounded-lg text-xs font-semibold transition"
+                className="px-3 py-1.5 bg-[#FEF2F2] hover:bg-[#FEE2E2] border border-[#FECACA] text-[#B91C1C] rounded-lg text-xs font-semibold transition"
               >
                 {cancellingOrderId === order.id ? 'Cancelling...' : 'Cancel Order'}
               </button>
@@ -396,8 +397,8 @@ export default function CustomerPortal() {
               onClick={() => toggleOrderHistory(order)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
                 isExpanded
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300'
+                  ? 'bg-[#2563EB] text-white shadow-sm'
+                  : 'bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] text-[#1D4ED8]'
               }`}
             >
               {buttonLabel}
@@ -407,40 +408,40 @@ export default function CustomerPortal() {
 
         {/* Expanded Inline History & Audit Timeline */}
         {isExpanded && (
-          <div className="border-t border-gray-800 bg-gray-950/70 p-4 space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b border-gray-800/80 pb-2">
-              <span className="font-bold text-gray-300 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-blue-400" />
+          <div className="border-t border-[#E2E8F0] bg-[#F8FAFC] p-4 space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
+              <span className="font-bold text-[#0F172A] flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#2563EB]" />
                 {isCancelled ? 'Audit History' : 'Tracking Timeline'} (Order #{order.id})
               </span>
-              <span className="text-[10px] text-gray-500 font-mono">Immutable Audit Log</span>
+              <span className="text-xs text-[#64748B] font-mono">Immutable Audit Log</span>
             </div>
 
             {isLoadingHistory ? (
-              <div className="py-6 text-center text-gray-400 flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-blue-400" /> Loading order audit history...
+              <div className="py-6 text-center text-[#64748B] flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-[#2563EB]" /> Loading order audit history...
               </div>
             ) : historyError ? (
-              <div className="py-3 px-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300 text-xs">
+              <div className="py-3 px-3 bg-[#FEF2F2] border border-[#FECACA] rounded-lg text-[#B91C1C] text-xs">
                 {historyError}
               </div>
             ) : historyEvents.length === 0 ? (
-              <div className="py-4 text-center text-gray-500 italic">No tracking events recorded yet.</div>
+              <div className="py-4 text-center text-[#64748B] italic">No tracking events recorded yet.</div>
             ) : (
-              <div className="relative border-l border-blue-500/30 ml-3 pl-4 space-y-4 pt-1">
+              <div className="relative border-l border-[#BFDBFE] ml-3 pl-4 space-y-4 pt-1">
                 {historyEvents.map((ev) => (
                   <div key={ev.id} className="relative">
-                    <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-blue-500 ring-4 ring-gray-950" />
-                    <div className="font-bold text-white text-xs">{ev.event_type}</div>
-                    <div className="text-[11px] text-gray-400">
+                    <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-[#2563EB] ring-4 ring-[#F8FAFC]" />
+                    <div className="font-bold text-[#0F172A] text-xs">{ev.event_type}</div>
+                    <div className="text-xs text-[#475569]">
                       {ev.previous_status ? `${ev.previous_status} → ` : ''}
-                      <span className="text-blue-300 font-semibold">{ev.new_status}</span>
+                      <span className="text-[#1D4ED8] font-semibold">{ev.new_status}</span>
                     </div>
-                    <div className="text-[10px] text-gray-500 mt-0.5">
+                    <div className="text-xs text-[#64748B] mt-0.5">
                       Actor: {ev.actor_role || 'SYSTEM'} • {new Date(ev.created_at).toLocaleString()}
                     </div>
                     {ev.metadata_json && (
-                      <pre className="mt-1 text-[10px] font-mono bg-gray-900/90 p-2 rounded border border-gray-800/80 text-gray-300 overflow-x-auto">
+                      <pre className="mt-1 text-xs font-mono bg-white p-2 rounded border border-[#E2E8F0] text-[#334155] overflow-x-auto">
                         {ev.metadata_json}
                       </pre>
                     )}
@@ -451,30 +452,30 @@ export default function CustomerPortal() {
 
             {/* Inline Reschedule Form if FAILED or AWAITING_RESCHEDULE */}
             {(order.current_status === 'FAILED' || order.current_status === 'AWAITING_RESCHEDULE') && (
-              <div className="mt-4 p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-3">
-                <div className="text-xs font-bold text-amber-400 flex items-center gap-2">
+              <div className="mt-4 p-4 bg-[#FFFBEB] border border-[#FDE68A] rounded-xl space-y-3">
+                <div className="text-xs font-bold text-[#B45309] flex items-center gap-2">
                   <Calendar className="w-4 h-4" /> Request Delivery Reschedule
                 </div>
                 <form onSubmit={(e) => handleRescheduleSubmit(e, order.id)} className="space-y-3 text-xs">
                   <div>
-                    <label className="block text-gray-400 mb-1">Preferred Date</label>
+                    <label className="block text-[#475569] font-medium mb-1">Preferred Date</label>
                     <input
                       type="date"
                       min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
                       max={new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]}
                       value={rescheduleDate}
                       onChange={(e) => setRescheduleDate(e.target.value)}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                      className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] outline-none focus:border-[#2563EB]"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-gray-400 mb-1">Reschedule Reason / Instructions</label>
+                    <label className="block text-[#475569] font-medium mb-1">Reschedule Reason / Instructions</label>
                     <input
                       type="text"
                       value={rescheduleReason}
                       onChange={(e) => setRescheduleReason(e.target.value)}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                      className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] outline-none focus:border-[#2563EB]"
                       placeholder="e.g. Please deliver after 3 PM"
                       required
                     />
@@ -482,7 +483,7 @@ export default function CustomerPortal() {
                   <button
                     type="submit"
                     disabled={rescheduling}
-                    className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-bold transition shadow-md shadow-amber-600/20"
+                    className="w-full py-2 bg-[#D97706] hover:bg-[#B45309] text-white rounded-lg font-semibold transition shadow-sm"
                   >
                     {rescheduling ? 'Submitting...' : 'Submit Reschedule Request'}
                   </button>
@@ -495,38 +496,47 @@ export default function CustomerPortal() {
     );
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center text-[#64748B] text-sm font-medium">
+        Verifying customer portal state...
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Top Header Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-800 pb-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E2E8F0] pb-5">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-3">
-            <Package className="w-8 h-8 text-blue-500" /> Customer Delivery Portal
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] flex items-center gap-3">
+            <Package className="w-8 h-8 text-[#2563EB]" /> Customer Delivery Portal
           </h1>
-          <p className="text-gray-400 text-xs sm:text-sm mt-1">
+          <p className="text-[#64748B] text-sm mt-1 font-medium">
             Calculate deterministic rates, place orders, and manage your delivery archive.
           </p>
         </div>
 
         {/* View Mode Switcher + Refresh Button */}
         <div className="flex items-center gap-3 self-start md:self-auto">
-          <div className="flex items-center bg-gray-900 p-1 rounded-xl border border-gray-800 text-xs font-semibold">
+          {/* Light Segmented Control */}
+          <div className="flex items-center bg-[#F1F5F9] p-1 rounded-lg border border-[#E2E8F0] text-xs font-semibold">
             <button
               onClick={() => setViewMode('dashboard')}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-md transition flex items-center gap-1.5 ${
                 viewMode === 'dashboard'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-[#2563EB] text-white shadow-sm'
+                  : 'text-[#334155] hover:text-[#0F172A]'
               }`}
             >
               <Calculator className="w-3.5 h-3.5" /> Dashboard
             </button>
             <button
               onClick={() => setViewMode('history')}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-md transition flex items-center gap-1.5 ${
                 viewMode === 'history'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-[#2563EB] text-white shadow-sm'
+                  : 'text-[#334155] hover:text-[#0F172A]'
               }`}
             >
               <History className="w-3.5 h-3.5" /> Order History ({orders.length})
@@ -535,7 +545,7 @@ export default function CustomerPortal() {
 
           <button
             onClick={loadOrders}
-            className="flex items-center gap-2 px-3 py-2 bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 rounded-xl text-xs font-semibold transition"
+            className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#334155] rounded-lg text-xs font-semibold transition shadow-sm"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loadingOrders ? 'animate-spin' : ''}`} /> Refresh
           </button>
@@ -545,8 +555,8 @@ export default function CustomerPortal() {
       {/* Global Feedback Message */}
       {message && (
         <div
-          className={`p-4 rounded-xl text-xs font-semibold flex items-center gap-3 ${
-            message.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400'
+          className={`p-4 rounded-lg text-xs font-semibold flex items-center gap-3 shadow-sm ${
+            message.type === 'success' ? 'bg-[#F0FDF4] border border-[#BBF7D0] text-[#15803D]' : 'bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C]'
           }`}
         >
           {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
@@ -559,31 +569,31 @@ export default function CustomerPortal() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left Column: Instant Rate Calculator */}
           <div className="lg:col-span-5 space-y-6">
-            <div className="glass-panel rounded-2xl p-6 space-y-6 border border-gray-800">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Calculator className="w-4 h-4 text-blue-400" /> Instant Rate Calculator
+            <div className="bg-white rounded-xl p-6 space-y-6 border border-[#E2E8F0] shadow-sm">
+              <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+                <Calculator className="w-4 h-4 text-[#2563EB]" /> Instant Rate Calculator
               </h2>
 
               <form onSubmit={handleCalculateQuote} className="space-y-4 text-xs">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-gray-400 mb-1">Pickup Postal Code</label>
+                    <label className="block text-[#475569] font-medium mb-1">Pickup Postal Code</label>
                     <input
                       type="text"
                       value={pickupPostal}
                       onChange={(e) => setPickupPostal(e.target.value)}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-blue-500 outline-none"
+                      className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] font-mono focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none"
                       placeholder="e.g. 560078"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-gray-400 mb-1">Drop Postal Code</label>
+                    <label className="block text-[#475569] font-medium mb-1">Drop Postal Code</label>
                     <input
                       type="text"
                       value={dropPostal}
                       onChange={(e) => setDropPostal(e.target.value)}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-blue-500 outline-none"
+                      className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] font-mono focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none"
                       placeholder="e.g. 560041"
                       required
                     />
@@ -591,13 +601,13 @@ export default function CustomerPortal() {
                 </div>
 
                 <div>
-                  <label className="block text-gray-400 mb-1">Dimensions (L × B × H in cm)</label>
+                  <label className="block text-[#475569] font-medium mb-1">Dimensions (L × B × H in cm)</label>
                   <div className="grid grid-cols-3 gap-2">
                     <input
                       type="number"
                       value={length}
                       onChange={(e) => setLength(e.target.value)}
-                      className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-blue-500 outline-none"
+                      className="bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] font-mono focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none"
                       placeholder="L"
                       required
                     />
@@ -605,7 +615,7 @@ export default function CustomerPortal() {
                       type="number"
                       value={breadth}
                       onChange={(e) => setBreadth(e.target.value)}
-                      className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-blue-500 outline-none"
+                      className="bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] font-mono focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none"
                       placeholder="B"
                       required
                     />
@@ -613,7 +623,7 @@ export default function CustomerPortal() {
                       type="number"
                       value={height}
                       onChange={(e) => setHeight(e.target.value)}
-                      className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-blue-500 outline-none"
+                      className="bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] font-mono focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none"
                       placeholder="H"
                       required
                     />
@@ -622,33 +632,33 @@ export default function CustomerPortal() {
 
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-gray-400 mb-1">Weight (kg)</label>
+                    <label className="block text-[#475569] font-medium mb-1">Weight (kg)</label>
                     <input
                       type="number"
                       step="0.1"
                       value={weight}
                       onChange={(e) => setWeight(e.target.value)}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-blue-500 outline-none"
+                      className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] font-mono focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-gray-400 mb-1">Order Type</label>
+                    <label className="block text-[#475569] font-medium mb-1">Order Type</label>
                     <select
                       value={orderType}
                       onChange={(e: any) => setOrderType(e.target.value)}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none"
+                      className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none"
                     >
                       <option value="B2C">B2C</option>
                       <option value="B2B">B2B</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-gray-400 mb-1">Payment</label>
+                    <label className="block text-[#475569] font-medium mb-1">Payment</label>
                     <select
                       value={paymentType}
                       onChange={(e: any) => setPaymentType(e.target.value)}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none"
+                      className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none"
                     >
                       <option value="PREPAID">Prepaid</option>
                       <option value="COD">COD</option>
@@ -659,52 +669,52 @@ export default function CustomerPortal() {
                 <button
                   type="submit"
                   disabled={calculating}
-                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition shadow-md shadow-blue-600/20"
+                  className="w-full py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-lg font-semibold transition shadow-sm"
                 >
                   {calculating ? 'Calculating Quote...' : 'Calculate Quote'}
                 </button>
               </form>
 
               {quote && (
-                <div className="p-4 bg-gray-900/80 rounded-xl border border-blue-500/30 space-y-3">
-                  <div className="flex items-center justify-between border-b border-gray-800 pb-2">
-                    <span className="text-xs text-gray-400">Total Price Quote</span>
-                    <span className="text-xl font-black text-blue-400">₹{Number(quote.total_charge).toFixed(2)}</span>
+                <div className="p-4 bg-[#F8FAFC] rounded-xl border border-[#BFDBFE] space-y-3">
+                  <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
+                    <span className="text-xs text-[#475569] font-semibold">Total Price Quote</span>
+                    <span className="text-xl font-extrabold text-[#2563EB]">₹{Number(quote.total_charge).toFixed(2)}</span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-300">
-                    <div>Movement: <span className="font-bold text-white">{quote.movement_type}</span></div>
-                    <div>Billable Wt: <span className="font-bold text-white">{Number(quote.billable_weight).toFixed(2)} kg</span></div>
-                    <div>Volumetric Wt: <span className="font-mono">{Number(quote.volumetric_weight).toFixed(2)} kg</span></div>
-                    <div>Base Charge: <span className="font-mono">₹{Number(quote.base_charge).toFixed(2)}</span></div>
-                    <div>Weight Charge: <span className="font-mono">₹{Number(quote.weight_charge).toFixed(2)}</span></div>
-                    <div>COD Surcharge: <span className="font-mono">₹{Number(quote.cod_surcharge).toFixed(2)}</span></div>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-[#334155]">
+                    <div>Movement: <span className="font-bold text-[#0F172A]">{quote.movement_type}</span></div>
+                    <div>Billable Wt: <span className="font-bold text-[#0F172A]">{Number(quote.billable_weight).toFixed(2)} kg</span></div>
+                    <div>Volumetric Wt: <span className="font-mono text-[#0F172A]">{Number(quote.volumetric_weight).toFixed(2)} kg</span></div>
+                    <div>Base Charge: <span className="font-mono text-[#0F172A]">₹{Number(quote.base_charge).toFixed(2)}</span></div>
+                    <div>Weight Charge: <span className="font-mono text-[#0F172A]">₹{Number(quote.weight_charge).toFixed(2)}</span></div>
+                    <div>COD Surcharge: <span className="font-mono text-[#0F172A]">₹{Number(quote.cod_surcharge).toFixed(2)}</span></div>
                   </div>
 
-                  <div className="space-y-2 pt-2 border-t border-gray-800 text-xs">
+                  <div className="space-y-2 pt-2 border-t border-[#E2E8F0] text-xs">
                     <div>
-                      <label className="block text-gray-400 mb-1">Pickup Address</label>
+                      <label className="block text-[#475569] font-medium mb-1">Pickup Address</label>
                       <input
                         type="text"
                         value={pickupAddress}
                         onChange={(e) => setPickupAddress(e.target.value)}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white outline-none"
+                        className="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-[#0F172A] outline-none"
                       />
                     </div>
                     <div>
-                      <label className="block text-gray-400 mb-1">Drop Address</label>
+                      <label className="block text-[#475569] font-medium mb-1">Drop Address</label>
                       <input
                         type="text"
                         value={dropAddress}
                         onChange={(e) => setDropAddress(e.target.value)}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-white outline-none"
+                        className="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-[#0F172A] outline-none"
                       />
                     </div>
 
                     <button
                       onClick={handleCreateOrder}
                       disabled={placingOrder}
-                      className="w-full mt-2 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition shadow-lg shadow-emerald-600/20"
+                      className="w-full mt-2 py-2.5 bg-[#16A34A] hover:bg-[#15803D] text-white rounded-lg font-semibold transition shadow-sm"
                     >
                       {placingOrder ? 'Confirming & Locking Price...' : 'Confirm Order & Lock Price'}
                     </button>
@@ -716,22 +726,22 @@ export default function CustomerPortal() {
 
           {/* Right Column: Recent Orders (Maximum 3) */}
           <div className="lg:col-span-7 space-y-6">
-            <div className="glass-panel rounded-2xl p-6 border border-gray-800 space-y-4">
+            <div className="bg-white rounded-xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-blue-400" /> Recent Orders
+                <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#2563EB]" /> Recent Orders
                 </h2>
                 {orders.length > 0 && (
-                  <span className="text-xs text-gray-400 font-mono">
+                  <span className="text-xs text-[#64748B] font-mono font-medium">
                     Showing {recentOrders.length} of {orders.length}
                   </span>
                 )}
               </div>
 
               {loadingOrders ? (
-                <div className="py-12 text-center text-gray-400 text-xs">Loading orders...</div>
+                <div className="py-12 text-center text-[#64748B] text-xs">Loading orders...</div>
               ) : orders.length === 0 ? (
-                <div className="py-12 text-center text-gray-500 text-xs">
+                <div className="py-12 text-center text-[#64748B] text-xs">
                   No orders yet. Use the Rate Calculator on the left to place your first order.
                 </div>
               ) : (
@@ -741,7 +751,7 @@ export default function CustomerPortal() {
                   {/* View All Orders Button */}
                   <button
                     onClick={() => setViewMode('history')}
-                    className="w-full mt-2 py-3 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/30 text-blue-400 font-bold rounded-xl text-xs transition flex items-center justify-center gap-2"
+                    className="w-full mt-2 py-3 bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] text-[#1D4ED8] font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-sm"
                   >
                     View All Orders ({orders.length}) <ArrowRight className="w-4 h-4" />
                   </button>
@@ -755,28 +765,28 @@ export default function CustomerPortal() {
       {/* VIEW 2: SEARCHABLE & FILTERABLE ORDER HISTORY ARCHIVE */}
       {viewMode === 'history' && (
         <div className="space-y-6">
-          <div className="glass-panel rounded-2xl p-6 border border-gray-800 space-y-6">
+          <div className="bg-white rounded-xl p-6 border border-[#E2E8F0] shadow-sm space-y-6">
             {/* Header with Back Button */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-800 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E2E8F0] pb-4">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setViewMode('dashboard')}
-                  className="p-2 bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                  className="px-3 py-1.5 bg-white hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#334155] rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-sm"
                 >
                   <ArrowLeft className="w-4 h-4" /> Back to Dashboard
                 </button>
                 <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <History className="w-5 h-5 text-blue-400" /> Order History Archive
+                  <h2 className="text-lg font-bold text-[#0F172A] flex items-center gap-2">
+                    <History className="w-5 h-5 text-[#2563EB]" /> Order History Archive
                   </h2>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-[#64748B]">
                     Search and filter all {orders.length} historical delivery orders
                   </p>
                 </div>
               </div>
 
-              <div className="text-xs font-mono text-gray-400">
-                Found: <span className="font-bold text-blue-400">{filteredOrders.length}</span> / {orders.length} orders
+              <div className="text-xs font-mono text-[#64748B]">
+                Found: <span className="font-bold text-[#2563EB]">{filteredOrders.length}</span> / {orders.length} orders
               </div>
             </div>
 
@@ -784,18 +794,18 @@ export default function CustomerPortal() {
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs">
               {/* Search Bar */}
               <div className="sm:col-span-6 relative">
-                <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+                <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-2.5" />
                 <input
                   type="text"
                   placeholder="Search orders..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-9 pr-8 py-2 text-white outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-[#CBD5E1] rounded-lg pl-9 pr-8 py-2 text-[#0F172A] outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-2.5 text-gray-500 hover:text-white"
+                    className="absolute right-2.5 top-2.5 text-[#64748B] hover:text-[#0F172A]"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -807,7 +817,7 @@ export default function CustomerPortal() {
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-white outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] outline-none focus:border-[#2563EB]"
                 >
                   <option value="ALL">Status: All</option>
                   <option value="CREATED">CREATED</option>
@@ -828,7 +838,7 @@ export default function CustomerPortal() {
                 <select
                   value={typeFilter}
                   onChange={(e) => setTypeFilter(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-white outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] outline-none focus:border-[#2563EB]"
                 >
                   <option value="ALL">Type: All</option>
                   <option value="B2C">B2C</option>
@@ -841,7 +851,7 @@ export default function CustomerPortal() {
                 <select
                   value={paymentFilter}
                   onChange={(e) => setPaymentFilter(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-white outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] outline-none focus:border-[#2563EB]"
                 >
                   <option value="ALL">Payment: All</option>
                   <option value="PREPAID">Prepaid</option>
@@ -852,9 +862,9 @@ export default function CustomerPortal() {
 
             {/* Active Filter Clear Prompt */}
             {isFilterActive && (
-              <div className="flex items-center justify-between text-xs bg-blue-500/10 border border-blue-500/20 px-3 py-2 rounded-lg text-blue-300">
+              <div className="flex items-center justify-between text-xs bg-[#EFF6FF] border border-[#BFDBFE] px-3.5 py-2 rounded-lg text-[#1D4ED8] font-medium">
                 <span>Active filters applied. Showing {filteredOrders.length} matching order(s).</span>
-                <button onClick={resetFilters} className="text-xs underline hover:text-white font-bold">
+                <button onClick={resetFilters} className="text-xs underline hover:text-[#1E40AF] font-bold">
                   Clear Filters
                 </button>
               </div>
@@ -862,15 +872,15 @@ export default function CustomerPortal() {
 
             {/* Order History List */}
             {loadingOrders ? (
-              <div className="py-12 text-center text-gray-400 text-xs">Loading order archive...</div>
+              <div className="py-12 text-center text-[#64748B] text-xs">Loading order archive...</div>
             ) : orders.length === 0 ? (
-              <div className="py-12 text-center text-gray-500 text-xs">No orders yet.</div>
+              <div className="py-12 text-center text-[#64748B] text-xs">No orders yet.</div>
             ) : filteredOrders.length === 0 ? (
-              <div className="py-12 text-center text-gray-400 space-y-2">
-                <div className="text-sm font-semibold">No orders match your search and filter criteria.</div>
+              <div className="py-12 text-center text-[#64748B] space-y-2">
+                <div className="text-sm font-semibold text-[#0F172A]">No orders match your search and filter criteria.</div>
                 <button
                   onClick={resetFilters}
-                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-xs font-bold transition"
+                  className="px-4 py-2 bg-white hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#334155] rounded-lg text-xs font-semibold transition"
                 >
                   Reset Filters
                 </button>

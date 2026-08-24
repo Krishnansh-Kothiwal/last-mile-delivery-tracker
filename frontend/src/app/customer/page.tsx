@@ -532,12 +532,23 @@ export default function CustomerPortal() {
                   <h3 className="font-bold text-white text-base">Tracking Timeline — Order #{selectedOrder.id}</h3>
                   <p className="text-xs text-gray-400">Append-Only Immutable Event Audit Log</p>
                 </div>
-                <button
-                  onClick={() => setSelectedOrder(null)}
-                  className="text-gray-400 hover:text-white text-xs px-2 py-1 bg-gray-800 rounded"
-                >
-                  Close
-                </button>
+                <div className="flex items-center gap-2">
+                  {['CREATED', 'CONFIRMED', 'ASSIGNED'].includes(selectedOrder.current_status) && (
+                    <button
+                      onClick={() => handleCancelOrder(selectedOrder.id)}
+                      disabled={cancellingOrderId === selectedOrder.id}
+                      className="px-3 py-1 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 rounded text-xs font-semibold transition"
+                    >
+                      {cancellingOrderId === selectedOrder.id ? 'Cancelling...' : 'Cancel Order'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelectedOrder(null)}
+                    className="text-gray-400 hover:text-white text-xs px-2 py-1 bg-gray-800 rounded"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
 
               {loadingTracking ? (

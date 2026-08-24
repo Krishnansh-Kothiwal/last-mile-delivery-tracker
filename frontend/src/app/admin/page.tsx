@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { fetchApi } from '@/lib/api';
 import { ShieldCheck, MapPin, Truck, Scale, RefreshCw, Zap, UserCheck, AlertTriangle, ChevronRight, CheckCircle2, Sliders, Layers } from 'lucide-react';
@@ -8,7 +9,7 @@ import { ShieldCheck, MapPin, Truck, Scale, RefreshCw, Zap, UserCheck, AlertTria
 interface Zone {
   id: number;
   name: string;
-  description: string;
+  description?: string;
 }
 
 interface Area {
@@ -16,29 +17,27 @@ interface Area {
   name: string;
   postal_code: string;
   zone_id: number;
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
+}
+
+interface RateRule {
+  id: number;
+  order_type: string;
+  movement_type: string;
+  min_weight: number | string;
+  max_weight: number | string;
+  base_charge: number | string;
+  per_kg_charge: number | string;
 }
 
 interface RateCard {
   id: number;
   name: string;
-  is_active: boolean;
   effective_from: string;
-  rate_rules: Array<{
-    id: number;
-    order_type: string;
-    movement_type: string;
-    base_charge: number | string;
-    per_kg_charge: number | string;
-    min_weight: number | string;
-    max_weight: number | string;
-  }>;
-  cod_rules: Array<{
-    id: number;
-    order_type: string;
-    surcharge: number | string;
-  }>;
+  effective_to?: string;
+  is_active: boolean;
+  rate_rules: RateRule[];
 }
 
 interface ActiveAssignment {
@@ -52,8 +51,8 @@ interface ActiveAssignment {
   order_type: string;
   payment_type: string;
   assigned_at: string;
-  customer_name: string | null;
-  customer_email: string | null;
+  customer_name?: string | null;
+  customer_email?: string | null;
 }
 
 interface Agent {
@@ -92,7 +91,8 @@ interface Order {
 }
 
 export default function AdminControlCenter() {
-  const { user, quickLogin } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'dispatch' | 'overrides' | 'zones' | 'rates' | 'agents'>('dispatch');
 
   const [orders, setOrders] = useState<Order[]>([]);
@@ -120,10 +120,15 @@ export default function AdminControlCenter() {
   const [expandedAgentId, setExpandedAgentId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!user || user.role !== 'ADMIN') {
-      quickLogin('ADMIN');
+    if (!authLoading) {
+      if (!user) {
+        router.replace('/login');
+      } else if (user.role !== 'ADMIN') {
+        if (user.role === 'CUSTOMER') router.replace('/customer');
+        else if (user.role === 'DELIVERY_AGENT') router.replace('/agent');
+      }
     }
-  }, []);
+  }, [user, authLoading, router]);
 
   useEffect(() => {
     if (user && user.role === 'ADMIN') {

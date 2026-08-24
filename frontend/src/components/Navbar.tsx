@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { Truck, Package, ShieldCheck, UserCheck, LogOut } from 'lucide-react';
+import { Truck, Package, ShieldCheck, UserCheck, LogOut, LogIn } from 'lucide-react';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -27,36 +27,66 @@ export default function Navbar() {
 
         {user && (
           <nav className="hidden md:flex items-center gap-1 bg-gray-900/60 p-1.5 rounded-xl border border-gray-800">
-            <Link
-              href="/customer"
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                pathname.startsWith('/customer')
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-              }`}
-            >
-              <Package className="w-3.5 h-3.5" /> Customer Portal
-            </Link>
-            <Link
-              href="/agent"
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                pathname.startsWith('/agent')
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-              }`}
-            >
-              <UserCheck className="w-3.5 h-3.5" /> Agent Portal
-            </Link>
-            <Link
-              href="/admin"
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                pathname.startsWith('/admin')
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" /> Admin Control
-            </Link>
+            {user.role === 'CUSTOMER' && (
+              <Link
+                href="/customer"
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  pathname.startsWith('/customer')
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                }`}
+              >
+                <Package className="w-3.5 h-3.5" /> Customer Portal
+              </Link>
+            )}
+
+            {user.role === 'DELIVERY_AGENT' && (
+              <Link
+                href="/agent"
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  pathname.startsWith('/agent')
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5" /> Agent Portal
+              </Link>
+            )}
+
+            {user.role === 'ADMIN' && (
+              <>
+                <Link
+                  href="/admin"
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    pathname.startsWith('/admin')
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" /> Admin Control
+                </Link>
+                <Link
+                  href="/customer"
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    pathname.startsWith('/customer')
+                      ? 'bg-blue-600/30 text-blue-300 border border-blue-500/30'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                  }`}
+                >
+                  <Package className="w-3.5 h-3.5" /> Customer Portal
+                </Link>
+                <Link
+                  href="/agent"
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    pathname.startsWith('/agent')
+                      ? 'bg-blue-600/30 text-blue-300 border border-blue-500/30'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5" /> Agent Portal
+                </Link>
+              </>
+            )}
           </nav>
         )}
 
@@ -71,13 +101,21 @@ export default function Navbar() {
 
               <button
                 onClick={logout}
-                className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-800 rounded-lg transition"
+                className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-800 rounded-lg transition flex items-center gap-1 text-xs"
                 title="Log out"
               >
                 <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
-          ) : null}
+          ) : (
+            <Link
+              href="/login"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-md shadow-blue-600/20"
+            >
+              <LogIn className="w-4 h-4" /> Sign In
+            </Link>
+          )}
         </div>
       </div>
     </header>

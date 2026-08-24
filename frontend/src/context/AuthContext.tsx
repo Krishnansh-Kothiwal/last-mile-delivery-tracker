@@ -17,7 +17,6 @@ interface AuthContextType {
   token: string | null;
   loading: boolean;
   login: (email: string, pass: string) => Promise<User>;
-  quickLogin: (role: 'CUSTOMER' | 'DELIVERY_AGENT' | 'ADMIN') => Promise<User>;
   logout: () => void;
 }
 
@@ -33,10 +32,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (savedToken) {
       setToken(savedToken);
       fetchApi<User>('/auth/me')
-        .then((userData) => setUser(userData))
+        .then((userData) => {
+          setUser(userData);
+        })
         .catch(() => {
+          // Token invalid, rejected, or expired — clear stored session
           localStorage.removeItem('token');
           setToken(null);
+          setUser(null);
         })
         .finally(() => setLoading(false));
     } else {
@@ -58,21 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return me;
   };
 
-  const quickLogin = async (role: 'CUSTOMER' | 'DELIVERY_AGENT' | 'ADMIN'): Promise<User> => {
-    let email = 'rahul@example.com';
-    let pass = 'customer123';
-
-    if (role === 'DELIVERY_AGENT') {
-      email = 'deepa@agent.com';
-      pass = 'agent123';
-    } else if (role === 'ADMIN') {
-      email = 'admin@deliverytracker.com';
-      pass = 'admin123';
-    }
-
-    return login(email, pass);
-  };
-
   const logout = () => {
     localStorage.removeItem('token');
     setToken(null);
@@ -80,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, quickLogin, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

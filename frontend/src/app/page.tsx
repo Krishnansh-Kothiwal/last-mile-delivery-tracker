@@ -1,35 +1,23 @@
 'use client';
 
 import React from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import { Package, UserCheck, ShieldCheck, ArrowRight, Zap, MapPin, Scale, Clock } from 'lucide-react';
+import { Package, UserCheck, ShieldCheck, ArrowRight, Zap, MapPin, Scale, Clock, LogIn } from 'lucide-react';
 
 export default function LandingPage() {
-  const { user, quickLogin } = useAuth();
-  const router = useRouter();
-  const [error, setError] = React.useState<string | null>(null);
+  const { user } = useAuth();
 
-  const handleSelectRole = async (role: 'CUSTOMER' | 'DELIVERY_AGENT' | 'ADMIN') => {
-    setError(null);
-    try {
-      await quickLogin(role);
-      if (role === 'CUSTOMER') router.push('/customer');
-      if (role === 'DELIVERY_AGENT') router.push('/agent');
-      if (role === 'ADMIN') router.push('/admin');
-    } catch (e: any) {
-      setError(`Login failed: ${e.message}`);
-    }
+  const getPortalLink = () => {
+    if (!user) return '/login';
+    if (user.role === 'CUSTOMER') return '/customer';
+    if (user.role === 'DELIVERY_AGENT') return '/agent';
+    if (user.role === 'ADMIN') return '/admin';
+    return '/login';
   };
 
   return (
     <div className="space-y-12 py-6">
-      {error && (
-        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-semibold flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-gray-400 hover:text-white text-xs">✕</button>
-        </div>
-      )}
       {/* Hero Section */}
       <div className="text-center space-y-4 max-w-3xl mx-auto">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold">
@@ -41,9 +29,22 @@ export default function LandingPage() {
         <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
           Deterministic pricing, zone-based Haversine dispatching, and append-only immutable tracking events for urban logistics.
         </p>
+
+        <div className="pt-2">
+          <Link
+            href={getPortalLink()}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs transition shadow-lg shadow-blue-600/30"
+          >
+            {user ? (
+              <>Go to My Portal ({user.role}) <ArrowRight className="w-4 h-4" /></>
+            ) : (
+              <>Sign In to Access Portals <LogIn className="w-4 h-4" /></>
+            )}
+          </Link>
+        </div>
       </div>
 
-      {/* Role Selector Cards */}
+      {/* Role Feature Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Customer Card */}
         <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group hover:border-blue-500/40 transition-all flex flex-col justify-between">
@@ -57,12 +58,12 @@ export default function LandingPage() {
               Calculate instant price quotes, freeze immutable rate snapshots, place orders, and track deliveries with live audit logs.
             </p>
           </div>
-          <button
-            onClick={() => handleSelectRole('CUSTOMER')}
-            className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
+          <Link
+            href={user ? '/customer' : '/login'}
+            className="w-full py-2.5 px-4 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
           >
-            Enter as Customer (Rahul) <ArrowRight className="w-4 h-4" />
-          </button>
+            {user && user.role === 'CUSTOMER' ? 'Go to Customer Portal' : 'Customer Sign In'} <ArrowRight className="w-4 h-4" />
+          </Link>
         </div>
 
         {/* Agent Card */}
@@ -77,12 +78,12 @@ export default function LandingPage() {
               Toggle availability, stream location coordinates, accept dispatched orders, and update delivery statuses in real-time.
             </p>
           </div>
-          <button
-            onClick={() => handleSelectRole('DELIVERY_AGENT')}
-            className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+          <Link
+            href={user ? '/agent' : '/login'}
+            className="w-full py-2.5 px-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
           >
-            Enter as Agent (Deepa) <ArrowRight className="w-4 h-4" />
-          </button>
+            {user && user.role === 'DELIVERY_AGENT' ? 'Go to Agent Portal' : 'Agent Sign In'} <ArrowRight className="w-4 h-4" />
+          </Link>
         </div>
 
         {/* Admin Card */}
@@ -97,12 +98,12 @@ export default function LandingPage() {
               Manage zones, areas & rate cards, trigger automatic Haversine dispatching, and perform audited status overrides.
             </p>
           </div>
-          <button
-            onClick={() => handleSelectRole('ADMIN')}
-            className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-purple-600/20"
+          <Link
+            href={user ? '/admin' : '/login'}
+            className="w-full py-2.5 px-4 bg-purple-600/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
           >
-            Enter as Admin <ArrowRight className="w-4 h-4" />
-          </button>
+            {user && user.role === 'ADMIN' ? 'Go to Admin Control' : 'Admin Sign In'} <ArrowRight className="w-4 h-4" />
+          </Link>
         </div>
       </div>
 

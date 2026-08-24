@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { fetchApi } from '@/lib/api';
 import {
@@ -55,7 +56,9 @@ interface Order {
 }
 
 export default function CustomerPortal() {
-  const { user, quickLogin } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
 
@@ -101,13 +104,17 @@ export default function CustomerPortal() {
   const [cancellingOrderId, setCancellingOrderId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!user || user.role !== 'CUSTOMER') {
-      quickLogin('CUSTOMER');
+    if (!authLoading) {
+      if (!user) {
+        router.replace('/login');
+      } else if (user.role !== 'CUSTOMER' && user.role !== 'ADMIN') {
+        router.replace('/agent');
+      }
     }
-  }, []);
+  }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (user && user.role === 'CUSTOMER') {
+    if (user && (user.role === 'CUSTOMER' || user.role === 'ADMIN')) {
       loadOrders();
     }
   }, [user]);

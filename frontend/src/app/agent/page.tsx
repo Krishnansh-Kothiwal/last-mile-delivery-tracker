@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { fetchApi } from '@/lib/api';
 import { UserCheck, MapPin, Truck, CheckCircle2, XCircle, Navigation, RefreshCw, AlertTriangle, ArrowRight } from 'lucide-react';
@@ -36,7 +37,9 @@ interface AgentProfile {
 }
 
 export default function AgentPortal() {
-  const { user, quickLogin } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+
   const [profile, setProfile] = useState<AgentProfile | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,13 +52,17 @@ export default function AgentPortal() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    if (!user || user.role !== 'DELIVERY_AGENT') {
-      quickLogin('DELIVERY_AGENT');
+    if (!authLoading) {
+      if (!user) {
+        router.replace('/login');
+      } else if (user.role !== 'DELIVERY_AGENT' && user.role !== 'ADMIN') {
+        router.replace('/customer');
+      }
     }
-  }, []);
+  }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (user && user.role === 'DELIVERY_AGENT') {
+    if (user && (user.role === 'DELIVERY_AGENT' || user.role === 'ADMIN')) {
       loadAgentData();
     }
   }, [user]);

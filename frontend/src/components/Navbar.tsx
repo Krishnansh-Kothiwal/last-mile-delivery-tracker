@@ -2,25 +2,13 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { Truck, Package, ShieldCheck, UserCheck, LogOut, ArrowRightLeft } from 'lucide-react';
+import { Truck, Package, ShieldCheck, UserCheck, LogOut } from 'lucide-react';
 
 export default function Navbar() {
-  const { user, logout, quickLogin } = useAuth();
+  const { user, logout } = useAuth();
   const pathname = usePathname();
-  const router = useRouter();
-
-  const handleRoleSwitch = async (role: 'CUSTOMER' | 'DELIVERY_AGENT' | 'ADMIN') => {
-    try {
-      await quickLogin(role);
-      if (role === 'CUSTOMER') router.push('/customer');
-      if (role === 'DELIVERY_AGENT') router.push('/agent');
-      if (role === 'ADMIN') router.push('/admin');
-    } catch (e: any) {
-      console.error(`Failed to switch role: ${e.message}`);
-    }
-  };
 
   return (
     <header className="sticky top-0 z-50 glass-panel border-b border-gray-800">
@@ -75,36 +63,6 @@ export default function Navbar() {
         <div className="flex items-center gap-3">
           {user ? (
             <div className="flex items-center gap-3">
-              {/* Quick Persona Switcher */}
-              <div className="hidden sm:flex items-center gap-1.5 text-xs text-gray-400 bg-gray-900/80 px-2.5 py-1.5 rounded-lg border border-gray-800">
-                <ArrowRightLeft className="w-3.5 h-3.5 text-blue-400" />
-                <span>Switch:</span>
-                <button
-                  onClick={() => handleRoleSwitch('CUSTOMER')}
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                    user.role === 'CUSTOMER' ? 'bg-blue-600/30 text-blue-300 border border-blue-500/30' : 'hover:text-white'
-                  }`}
-                >
-                  Cust
-                </button>
-                <button
-                  onClick={() => handleRoleSwitch('DELIVERY_AGENT')}
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                    user.role === 'DELIVERY_AGENT' ? 'bg-blue-600/30 text-blue-300 border border-blue-500/30' : 'hover:text-white'
-                  }`}
-                >
-                  Agent
-                </button>
-                <button
-                  onClick={() => handleRoleSwitch('ADMIN')}
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                    user.role === 'ADMIN' ? 'bg-blue-600/30 text-blue-300 border border-blue-500/30' : 'hover:text-white'
-                  }`}
-                >
-                  Admin
-                </button>
-              </div>
-
               {/* User Tag */}
               <div className="text-right">
                 <div className="text-xs font-semibold text-gray-200">{user.full_name}</div>

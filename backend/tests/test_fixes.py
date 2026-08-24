@@ -658,3 +658,121 @@ class TestRescheduleDateValidation:
         assert reschedule.id is not None
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Order Cancellation Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestOrderCancellation:
+    """Tests for order cancellation state machine, agent release, audit logs, and notifications."""
+
+    def test_cancel_created_order_success(self, seeded_db):
+        """CREATED order can be cancelled legally by customer."""
+        from app.orders.service import create_order, cancel_order
+        from app.dependencies import get_password_hash
+
+        cust = User(email="custcancel1@domain.com", hashed_password=get_password_hash("pass"), full_name="Customer", role=UserRole.CUSTOMER)
+        seeded_db.add(cust)
+        seeded_db.flush()
+
+        order = create_order(
+            db=seeded_db, customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"), order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            actor_user_id=cust.id, actor_role=UserRole.CUSTOMER,
+        )
+        assert order.current_status == OrderStatus.CREATED
+
+        cancelled_order = cancel_order(db=seeded_db, order=order, actor_user_id=cust.id, reason="Changed mind")
+        assert cancelled_order.current_status == OrderStatus.CANCELLED
+
+        # Verify tracking event
+        events = seeded_db.query(TrackingEvent).filter(TrackingEvent.order_id == order.id).all()
+        cancel_events = [e for e in events if e.event_type == TrackingEventType.ORDER_CANCELLED]
+        assert len(cancel_events) == 1
+        assert cancel_events[0].previous_status == "CREATED"
+        assert cancel_events[0].new_status == "CANCELLED"
+        assert "Changed mind" in cancel_events[0].metadata_json
+
+        # Verify notifications queued
+        notifs = seeded_db.query(NotificationOutbox).filter(NotificationOutbox.order_id == order.id).all()
+        assert len(notifs) >= 1
+
+    def test_cancel_assigned_order_releases_agent_assignment_and_capacity(self, seeded_db):
+        """Cancelling an ASSIGNED order releases agent assignment and decrements active delivery count."""
+        from app.orders.service import create_order, confirm_order, cancel_order
+        from app.dispatch.engine import auto_assign_order
+        from app.dependencies import get_password_hash
+
+        cust = User(email="custcancel2@domain.com", hashed_password=get_password_hash("pass"), full_name="Customer", role=UserRole.CUSTOMER)
+        seeded_db.add(cust)
+        seeded_db.flush()
+
+        order = create_order(
+            db=seeded_db, customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"), order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            actor_user_id=cust.id, actor_role=UserRole.CUSTOMER,
+        )
+        confirm_order(seeded_db, order, cust.id)
+
+        # Auto-assign to eligible agent
+        assign_result = auto_assign_order(seeded_db, order, actor_user_id=1, actor_role=UserRole.ADMIN)
+        agent_id = assign_result["selected_agent"]["agent_id"]
+
+        agent = seeded_db.query(Agent).filter(Agent.id == agent_id).first()
+        assert agent.active_delivery_count == 1
+        assert order.current_status == OrderStatus.ASSIGNED
+
+        # Cancel assigned order
+        cancel_order(db=seeded_db, order=order, actor_user_id=cust.id, reason="Customer cancelled before pickup")
+
+        # Verify order status
+        assert order.current_status == OrderStatus.CANCELLED
+
+        # Verify assignment unassigned_at set
+        assignment = seeded_db.query(Assignment).filter(Assignment.order_id == order.id).first()
+        assert assignment.unassigned_at is not None
+
+        # Verify agent active delivery count decremented
+        seeded_db.refresh(agent)
+        assert agent.active_delivery_count == 0
+
+    def test_cancel_picked_up_order_rejected(self, seeded_db):
+        """Order in PICKED_UP status cannot be cancelled by customer."""
+        from app.orders.service import create_order, confirm_order, cancel_order
+        from app.dependencies import get_password_hash
+
+        cust = User(email="custcancel3@domain.com", hashed_password=get_password_hash("pass"), full_name="Customer", role=UserRole.CUSTOMER)
+        seeded_db.add(cust)
+        seeded_db.flush()
+
+        order = create_order(
+            db=seeded_db, customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"), order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            actor_user_id=cust.id, actor_role=UserRole.CUSTOMER,
+        )
+        order.current_status = OrderStatus.PICKED_UP
+        seeded_db.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            cancel_order(db=seeded_db, order=order, actor_user_id=cust.id, reason="Too late")
+        assert exc_info.value.status_code == 400
+        assert "before pick-up" in exc_info.value.detail or "Illegal transition" in exc_info.value.detail
+
+    def test_cancelled_is_terminal_state(self, seeded_db):
+        """CANCELLED is a terminal state; validate_transition raises for any transition from CANCELLED."""
+        from app.orders.state_machine import is_terminal, validate_transition, IllegalTransitionError
+
+        assert is_terminal(OrderStatus.CANCELLED) is True
+        with pytest.raises(IllegalTransitionError):
+            validate_transition(OrderStatus.CANCELLED, OrderStatus.CONFIRMED)
+
+
+

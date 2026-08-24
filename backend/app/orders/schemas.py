@@ -32,6 +32,10 @@ class RescheduleCreate(BaseModel):
     reason: Optional[str] = None
 
 
+class OrderCancel(BaseModel):
+    reason: Optional[str] = None
+
+
 class PriceSnapshotResponse(BaseModel):
     id: int
     actual_weight: Decimal

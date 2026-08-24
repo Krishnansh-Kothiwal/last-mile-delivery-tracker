@@ -276,6 +276,10 @@ export default function AdminControlCenter() {
                       className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${
                         order.current_status === 'CONFIRMED' || order.current_status === 'AWAITING_RESCHEDULE'
                           ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                          : order.current_status === 'CANCELLED'
+                          ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                          : order.current_status === 'DELIVERED'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                           : 'bg-gray-800 text-gray-400'
                       }`}
                     >

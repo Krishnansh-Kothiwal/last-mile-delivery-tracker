@@ -3,9 +3,9 @@ from app.models.enums import OrderStatus
 
 # Locked state-transition table per architecture spec
 ALLOWED_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
-    OrderStatus.CREATED: {OrderStatus.CONFIRMED},
-    OrderStatus.CONFIRMED: {OrderStatus.ASSIGNED},
-    OrderStatus.ASSIGNED: {OrderStatus.PICKED_UP},
+    OrderStatus.CREATED: {OrderStatus.CONFIRMED, OrderStatus.CANCELLED},
+    OrderStatus.CONFIRMED: {OrderStatus.ASSIGNED, OrderStatus.CANCELLED},
+    OrderStatus.ASSIGNED: {OrderStatus.PICKED_UP, OrderStatus.CANCELLED},
     OrderStatus.PICKED_UP: {OrderStatus.IN_TRANSIT},
     OrderStatus.IN_TRANSIT: {OrderStatus.OUT_FOR_DELIVERY},
     OrderStatus.OUT_FOR_DELIVERY: {OrderStatus.DELIVERED, OrderStatus.FAILED},
@@ -14,6 +14,7 @@ ALLOWED_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
     # AWAITING_RESCHEDULE → ASSIGNED: direct path when auto-assignment immediately follows reschedule
     OrderStatus.AWAITING_RESCHEDULE: {OrderStatus.CONFIRMED, OrderStatus.ASSIGNED},
     OrderStatus.DELIVERED: set(),  # Terminal state — no transitions
+    OrderStatus.CANCELLED: set(),  # Terminal state — no transitions
 }
 
 
@@ -37,4 +38,4 @@ def validate_transition(from_status: OrderStatus, to_status: OrderStatus) -> boo
 
 def is_terminal(status: OrderStatus) -> bool:
     """Check if a status is terminal (no further transitions possible)."""
-    return status == OrderStatus.DELIVERED
+    return status in (OrderStatus.DELIVERED, OrderStatus.CANCELLED)

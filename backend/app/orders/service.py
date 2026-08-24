@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from app.models import (
-    Order, OrderPriceSnapshot, DeliveryAttempt, User,
+    Order, OrderPriceSnapshot, DeliveryAttempt, User, Agent, Assignment,
     OrderStatus, DeliveryAttemptStatus, OrderType, PaymentType,
     TrackingEventType, UserRole, RescheduleRequest, RescheduleStatus,
 )
@@ -297,4 +297,69 @@ def reschedule_order(
         db.commit()
 
     return reschedule
+
+
+def cancel_order(
+    db: Session,
+    order: Order,
+    actor_user_id: int,
+    actor_role: UserRole = UserRole.CUSTOMER,
+    reason: Optional[str] = None,
+) -> Order:
+    """
+    Cancel an order legally from CREATED, CONFIRMED, or ASSIGNED status.
+    - Validates legal transition using state machine.
+    - If order is ASSIGNED:
+      - Release active agent assignment (set unassigned_at = datetime.utcnow()).
+      - Decrement agent's active_delivery_count.
+    - Updates order current_status = OrderStatus.CANCELLED.
+    - Creates tracking event + notification outbox item.
+    - Commits and returns the order.
+    """
+    try:
+        validate_transition(order.current_status, OrderStatus.CANCELLED)
+    except IllegalTransitionError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel order in status {order.current_status.value}. Cancellation is only allowed before pick-up."
+        )
+
+    # Release active agent assignment and capacity if order was ASSIGNED
+    if order.current_status == OrderStatus.ASSIGNED:
+        active_assignment = (
+            db.query(Assignment)
+            .filter(
+                Assignment.order_id == order.id,
+                Assignment.unassigned_at == None,  # noqa: E711
+            )
+            .first()
+        )
+        if active_assignment:
+            active_assignment.unassigned_at = datetime.utcnow()
+            agent = db.query(Agent).filter(Agent.id == active_assignment.agent_id).first()
+            if agent and agent.active_delivery_count > 0:
+                agent.active_delivery_count -= 1
+
+    previous_status = order.current_status.value
+    order.current_status = OrderStatus.CANCELLED
+
+    metadata = {}
+    if reason and reason.strip():
+        metadata["reason"] = reason.strip()
+
+    create_status_change_event_and_notification(
+        db=db,
+        order=order,
+        event_type=TrackingEventType.ORDER_CANCELLED,
+        previous_status=previous_status,
+        new_status=OrderStatus.CANCELLED.value,
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+        metadata=metadata if metadata else None,
+    )
+
+    db.commit()
+    db.refresh(order)
+    return order
+
 

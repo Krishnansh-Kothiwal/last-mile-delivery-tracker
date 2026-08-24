@@ -236,6 +236,31 @@ export default function CustomerPortal() {
     }
   };
 
+  const [cancellingOrderId, setCancellingOrderId] = useState<number | null>(null);
+
+  const handleCancelOrder = async (orderId: number) => {
+    const confirmed = window.confirm(`Are you sure you want to cancel Order #${orderId}? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    setCancellingOrderId(orderId);
+    setMessage(null);
+    try {
+      await fetchApi(`/orders/${orderId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Customer requested cancellation' }),
+      });
+      setMessage({ type: 'success', text: `Order #${orderId} cancelled successfully!` });
+      loadOrders();
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder((prev) => prev ? { ...prev, current_status: 'CANCELLED' } : null);
+      }
+    } catch (e: any) {
+      setMessage({ type: 'error', text: `Cancellation failed: ${e.message}` });
+    } finally {
+      setCancellingOrderId(null);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Title */}
@@ -458,6 +483,8 @@ export default function CustomerPortal() {
                               ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                               : order.current_status === 'FAILED' || order.current_status === 'AWAITING_RESCHEDULE'
                               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : order.current_status === 'CANCELLED'
+                              ? 'bg-red-500/20 text-red-300 border border-red-500/30'
                               : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
                           }`}
                         >
@@ -474,12 +501,23 @@ export default function CustomerPortal() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => openTracking(order)}
-                      className="px-3.5 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 self-start sm:self-auto"
-                    >
-                      Track & Audit <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      {['CREATED', 'CONFIRMED', 'ASSIGNED'].includes(order.current_status) && (
+                        <button
+                          onClick={() => handleCancelOrder(order.id)}
+                          disabled={cancellingOrderId === order.id}
+                          className="px-3.5 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+                        >
+                          {cancellingOrderId === order.id ? 'Cancelling...' : 'Cancel Order'}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => openTracking(order)}
+                        className="px-3.5 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+                      >
+                        Track & Audit <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

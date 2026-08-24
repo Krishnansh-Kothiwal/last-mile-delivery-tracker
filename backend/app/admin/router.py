@@ -1,4 +1,5 @@
 """Admin router - rate cards, orders management, agent management, overrides."""
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
@@ -267,6 +268,21 @@ def admin_override_status(
 
     previous_status = order.current_status.value
     order.current_status = new_status
+
+    if previous_status == OrderStatus.ASSIGNED.value and new_status == OrderStatus.CANCELLED:
+        active_assignment = (
+            db.query(Assignment)
+            .filter(
+                Assignment.order_id == order.id,
+                Assignment.unassigned_at == None,  # noqa: E711
+            )
+            .first()
+        )
+        if active_assignment:
+            active_assignment.unassigned_at = datetime.utcnow()
+            agent = db.query(Agent).filter(Agent.id == active_assignment.agent_id).first()
+            if agent and agent.active_delivery_count > 0:
+                agent.active_delivery_count -= 1
 
     create_status_change_event_and_notification(
         db=db,

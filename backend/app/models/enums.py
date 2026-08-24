@@ -33,6 +33,7 @@ class OrderStatus(str, enum.Enum):
     DELIVERED = "DELIVERED"
     FAILED = "FAILED"
     AWAITING_RESCHEDULE = "AWAITING_RESCHEDULE"
+    CANCELLED = "CANCELLED"
 
 
 class DeliveryAttemptStatus(str, enum.Enum):
@@ -70,6 +71,7 @@ class TrackingEventType(str, enum.Enum):
     DELIVERED = "DELIVERED"
     ADMIN_OVERRIDE = "ADMIN_OVERRIDE"
     AUTO_ASSIGNMENT_FAILED = "AUTO_ASSIGNMENT_FAILED"
+    ORDER_CANCELLED = "ORDER_CANCELLED"
 
 
 class NotificationChannel(str, enum.Enum):

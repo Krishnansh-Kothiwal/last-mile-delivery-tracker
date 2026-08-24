@@ -187,7 +187,7 @@ export default function CustomerPortal() {
       const data = await fetchApi<{ order_id: number; events: TrackingEvent[] }>(`/orders/${order.id}/tracking`);
       setTrackingEvents(data.events);
     } catch (e: any) {
-      alert(`Failed to load tracking: ${e.message}`);
+      setMessage({ type: 'error', text: `Failed to load tracking: ${e.message}` });
     } finally {
       setLoadingTracking(false);
     }
@@ -196,20 +196,41 @@ export default function CustomerPortal() {
   const handleRescheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrder) return;
+
+    if (!rescheduleDate) {
+      setMessage({ type: 'error', text: 'Please select a preferred reschedule date.' });
+      return;
+    }
+
+    const selectedDate = new Date(rescheduleDate);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0); // start of today
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + 30);
+
+    if (selectedDate <= now) {
+      setMessage({ type: 'error', text: 'Reschedule date must be in the future.' });
+      return;
+    }
+    if (selectedDate > maxDate) {
+      setMessage({ type: 'error', text: 'Reschedule date cannot be more than 30 days in the future.' });
+      return;
+    }
+
     setRescheduling(true);
     try {
       await fetchApi(`/orders/${selectedOrder.id}/reschedule`, {
         method: 'POST',
         body: JSON.stringify({
-          requested_date: rescheduleDate ? new Date(rescheduleDate).toISOString() : null,
+          requested_date: new Date(rescheduleDate).toISOString(),
           reason: rescheduleReason,
         }),
       });
-      alert('Reschedule request submitted successfully!');
+      setMessage({ type: 'success', text: 'Reschedule request submitted successfully!' });
       openTracking(selectedOrder);
       loadOrders();
     } catch (e: any) {
-      alert(`Reschedule failed: ${e.message}`);
+      setMessage({ type: 'error', text: `Reschedule failed: ${e.message}` });
     } finally {
       setRescheduling(false);
     }
@@ -516,6 +537,8 @@ export default function CustomerPortal() {
                       <label className="block text-gray-400 mb-1">Preferred Date</label>
                       <input
                         type="date"
+                        min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                        max={new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]}
                         value={rescheduleDate}
                         onChange={(e) => setRescheduleDate(e.target.value)}
                         className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"

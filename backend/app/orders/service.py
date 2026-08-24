@@ -1,5 +1,5 @@
 """Orders service - business logic for order lifecycle."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -166,6 +166,21 @@ def reschedule_order(
             status_code=400,
             detail=f"Cannot reschedule: order is in {order.current_status.value}, expected AWAITING_RESCHEDULE"
         )
+
+    # Validate requested_date: must be in the future and max 30 days from today
+    if requested_date:
+        now = datetime.utcnow()
+        req_dt = requested_date.replace(tzinfo=None) if requested_date.tzinfo else requested_date
+        if req_dt <= now:
+            raise HTTPException(
+                status_code=400,
+                detail="Reschedule date must be in the future."
+            )
+        if req_dt > now + timedelta(days=30):
+            raise HTTPException(
+                status_code=400,
+                detail="Reschedule date cannot be more than 30 days in the future."
+            )
 
     # Find the most recent failed attempt
     failed_attempt = (

@@ -42,6 +42,8 @@ export default function AgentPortal() {
   const [failingOrderId, setFailingOrderId] = useState<number | null>(null);
   const [failureReason, setFailureReason] = useState('Customer unavailable at drop location');
 
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   useEffect(() => {
     if (!user || user.role !== 'DELIVERY_AGENT') {
       quickLogin('DELIVERY_AGENT');
@@ -58,12 +60,12 @@ export default function AgentPortal() {
     setLoading(true);
     try {
       // Fix #7: Load profile from dedicated endpoint
-      const [profileData, assignmentData] = await Promise.all([
+      const [pData, aData] = await Promise.all([
         fetchApi<AgentProfile>('/agent/profile'),
         fetchApi<Assignment[]>('/agent/assignments'),
       ]);
-      setProfile(profileData);
-      setAssignments(assignmentData);
+      setProfile(pData);
+      setAssignments(aData);
     } catch (e: any) {
       console.error(e);
     } finally {
@@ -74,20 +76,23 @@ export default function AgentPortal() {
   // Fix #6: Backend expects { status: "AVAILABLE" } not { availability_status: "AVAILABLE" }
   const handleToggleAvailability = async () => {
     const newStatus = profile?.availability_status === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE';
+    setMessage(null);
     try {
       await fetchApi('/agent/availability', {
         method: 'POST',
         body: JSON.stringify({ status: newStatus }),
       });
       setProfile((prev) => prev ? { ...prev, availability_status: newStatus as any } : null);
+      setMessage({ type: 'success', text: `Availability set to ${newStatus}` });
       loadAgentData();
     } catch (e: any) {
-      alert(`Failed to update availability: ${e.message}`);
+      setMessage({ type: 'error', text: `Failed to update availability: ${e.message}` });
     }
   };
 
   const handlePingLocation = async () => {
     setUpdatingLocation(true);
+    setMessage(null);
     try {
       // Mock GPS Ping around Bengaluru South (12.9100, 77.5950)
       const lat = 12.9100 + (Math.random() - 0.5) * 0.01;
@@ -96,10 +101,10 @@ export default function AgentPortal() {
         method: 'POST',
         body: JSON.stringify({ latitude: lat, longitude: lon }),
       });
-      alert(`GPS location updated to (${lat.toFixed(4)}, ${lon.toFixed(4)})`);
+      setMessage({ type: 'success', text: `GPS location updated to (${lat.toFixed(4)}, ${lon.toFixed(4)})` });
       loadAgentData();
     } catch (e: any) {
-      alert(`Failed to ping location: ${e.message}`);
+      setMessage({ type: 'error', text: `Failed to ping location: ${e.message}` });
     } finally {
       setUpdatingLocation(false);
     }
@@ -107,26 +112,30 @@ export default function AgentPortal() {
 
   // Fix #5: Use flat order_id field (not a.order.id)
   const handleStatusChange = async (orderId: number, action: 'pickup' | 'in-transit' | 'out-for-delivery' | 'deliver') => {
+    setMessage(null);
     try {
       await fetchApi(`/agent/orders/${orderId}/${action}`, { method: 'POST' });
+      setMessage({ type: 'success', text: `Order #${orderId} updated to ${action.toUpperCase().replace('-', '_')}` });
       loadAgentData();
     } catch (e: any) {
-      alert(`Status update failed: ${e.message}`);
+      setMessage({ type: 'error', text: `Status update failed: ${e.message}` });
     }
   };
 
   const handleFailOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!failingOrderId) return;
+    setMessage(null);
     try {
       await fetchApi(`/agent/orders/${failingOrderId}/fail`, {
         method: 'POST',
         body: JSON.stringify({ failure_reason: failureReason }),
       });
+      setMessage({ type: 'success', text: `Order #${failingOrderId} delivery attempt recorded as FAILED` });
       setFailingOrderId(null);
       loadAgentData();
     } catch (e: any) {
-      alert(`Failed to record delivery failure: ${e.message}`);
+      setMessage({ type: 'error', text: `Failed to record delivery failure: ${e.message}` });
     }
   };
 
@@ -160,6 +169,22 @@ export default function AgentPortal() {
           </button>
         </div>
       </div>
+
+      {/* Alert / Feedback Message */}
+      {message && (
+        <div
+          className={`p-4 rounded-xl border text-xs font-semibold flex items-center justify-between transition ${
+            message.type === 'success'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              : 'bg-red-500/10 border-red-500/30 text-red-300'
+          }`}
+        >
+          <span>{message.text}</span>
+          <button onClick={() => setMessage(null)} className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-900/50">
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Agent Status Card */}
       <div className="glass-panel rounded-2xl p-6 border border-gray-800 grid grid-cols-1 sm:grid-cols-3 gap-6">

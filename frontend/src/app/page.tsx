@@ -8,20 +8,28 @@ import { Package, UserCheck, ShieldCheck, ArrowRight, Zap, MapPin, Scale, Clock 
 export default function LandingPage() {
   const { user, quickLogin } = useAuth();
   const router = useRouter();
+  const [error, setError] = React.useState<string | null>(null);
 
   const handleSelectRole = async (role: 'CUSTOMER' | 'DELIVERY_AGENT' | 'ADMIN') => {
+    setError(null);
     try {
       await quickLogin(role);
       if (role === 'CUSTOMER') router.push('/customer');
       if (role === 'DELIVERY_AGENT') router.push('/agent');
       if (role === 'ADMIN') router.push('/admin');
     } catch (e: any) {
-      alert(`Login failed: ${e.message}`);
+      setError(`Login failed: ${e.message}`);
     }
   };
 
   return (
     <div className="space-y-12 py-6">
+      {error && (
+        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-semibold flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-gray-400 hover:text-white text-xs">✕</button>
+        </div>
+      )}
       {/* Hero Section */}
       <div className="text-center space-y-4 max-w-3xl mx-auto">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold">

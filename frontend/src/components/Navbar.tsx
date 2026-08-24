@@ -18,7 +18,7 @@ export default function Navbar() {
       if (role === 'DELIVERY_AGENT') router.push('/agent');
       if (role === 'ADMIN') router.push('/admin');
     } catch (e: any) {
-      alert(`Failed to switch role: ${e.message}`);
+      console.error(`Failed to switch role: ${e.message}`);
     }
   };
 

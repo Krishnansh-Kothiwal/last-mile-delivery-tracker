@@ -30,6 +30,7 @@ import pytest
 from decimal import Decimal
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from tests.conftest import get_auth_header
@@ -568,4 +569,92 @@ class TestNotificationRecipientsAndChannels:
         sms_provider = TwilioSmsProvider()
         with pytest.raises(ValueError, match="Recipient phone number is missing"):
             sms_provider.send("SMS", "template", {})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Reschedule Date Validation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRescheduleDateValidation:
+    """Reschedule date boundary validation tests."""
+
+    def test_reschedule_past_date_rejected(self, seeded_db):
+        """Past reschedule dates are rejected with 400 Bad Request."""
+        from app.orders.service import reschedule_order, create_order
+        from app.dependencies import get_password_hash
+
+        cust = User(email="custres@domain.com", hashed_password=get_password_hash("pass"), full_name="Customer", role=UserRole.CUSTOMER)
+        seeded_db.add(cust)
+        seeded_db.flush()
+
+        order = create_order(
+            db=seeded_db, customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"), order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            actor_user_id=cust.id, actor_role=UserRole.CUSTOMER,
+        )
+        order.current_status = OrderStatus.AWAITING_RESCHEDULE
+        seeded_db.add(DeliveryAttempt(order_id=order.id, attempt_number=1, status=DeliveryAttemptStatus.FAILED))
+        seeded_db.commit()
+
+        past_date = datetime.utcnow() - timedelta(days=1)
+        with pytest.raises(HTTPException) as exc_info:
+            reschedule_order(db=seeded_db, order=order, customer_id=cust.id, requested_date=past_date)
+        assert exc_info.value.status_code == 400
+        assert "future" in exc_info.value.detail
+
+    def test_reschedule_date_beyond_30_days_rejected(self, seeded_db):
+        """Reschedule dates beyond 30 days are rejected with 400 Bad Request."""
+        from app.orders.service import reschedule_order, create_order
+        from app.dependencies import get_password_hash
+
+        cust = User(email="custres30@domain.com", hashed_password=get_password_hash("pass"), full_name="Customer", role=UserRole.CUSTOMER)
+        seeded_db.add(cust)
+        seeded_db.flush()
+
+        order = create_order(
+            db=seeded_db, customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"), order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            actor_user_id=cust.id, actor_role=UserRole.CUSTOMER,
+        )
+        order.current_status = OrderStatus.AWAITING_RESCHEDULE
+        seeded_db.add(DeliveryAttempt(order_id=order.id, attempt_number=1, status=DeliveryAttemptStatus.FAILED))
+        seeded_db.commit()
+
+        far_future_date = datetime.utcnow() + timedelta(days=31)
+        with pytest.raises(HTTPException) as exc_info:
+            reschedule_order(db=seeded_db, order=order, customer_id=cust.id, requested_date=far_future_date)
+        assert exc_info.value.status_code == 400
+        assert "30 days" in exc_info.value.detail
+
+    def test_reschedule_valid_future_date_accepted(self, seeded_db):
+        """Valid reschedule dates (e.g. 2 days out) are accepted cleanly."""
+        from app.orders.service import reschedule_order, create_order
+        from app.dependencies import get_password_hash
+
+        cust = User(email="custvalidres@domain.com", hashed_password=get_password_hash("pass"), full_name="Customer", role=UserRole.CUSTOMER)
+        seeded_db.add(cust)
+        seeded_db.flush()
+
+        order = create_order(
+            db=seeded_db, customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"), order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            actor_user_id=cust.id, actor_role=UserRole.CUSTOMER,
+        )
+        order.current_status = OrderStatus.AWAITING_RESCHEDULE
+        seeded_db.add(DeliveryAttempt(order_id=order.id, attempt_number=1, status=DeliveryAttemptStatus.FAILED))
+        seeded_db.commit()
+
+        valid_date = datetime.utcnow() + timedelta(days=2)
+        reschedule = reschedule_order(db=seeded_db, order=order, customer_id=cust.id, requested_date=valid_date)
+        assert reschedule.id is not None
+
 

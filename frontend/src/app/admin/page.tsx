@@ -89,6 +89,8 @@ export default function AdminControlCenter() {
   const [overrideStatus, setOverrideStatus] = useState<string>('CONFIRMED');
   const [overrideReason, setOverrideReason] = useState<string>('Admin manual correction');
 
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') {
       quickLogin('ADMIN');
@@ -125,34 +127,38 @@ export default function AdminControlCenter() {
   };
 
   const handleAutoAssign = async (orderId: number) => {
+    setMessage(null);
     try {
       const res = await fetchApi(`/admin/orders/${orderId}/auto-assign`, { method: 'POST' });
       setDispatchResult(res);
+      setMessage({ type: 'success', text: `Auto-assignment completed for Order #${orderId}` });
       loadData();
     } catch (e: any) {
-      alert(`Auto-assignment failed: ${e.message}`);
+      setMessage({ type: 'error', text: `Auto-assignment failed: ${e.message}` });
     }
   };
 
   const handleManualAssign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!assigningOrderId || !selectedAgentId) return;
+    setMessage(null);
     try {
       await fetchApi(`/admin/orders/${assigningOrderId}/assign`, {
         method: 'POST',
         body: JSON.stringify({ agent_id: parseInt(selectedAgentId) }),
       });
-      alert('Order assigned successfully!');
+      setMessage({ type: 'success', text: `Order #${assigningOrderId} assigned successfully!` });
       setAssigningOrderId(null);
       loadData();
     } catch (e: any) {
-      alert(`Assignment failed: ${e.message}`);
+      setMessage({ type: 'error', text: `Assignment failed: ${e.message}` });
     }
   };
 
   const handleStatusOverride = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!overrideOrderId) return;
+    setMessage(null);
     try {
       await fetchApi(`/admin/orders/${overrideOrderId}/override-status`, {
         method: 'POST',
@@ -161,11 +167,11 @@ export default function AdminControlCenter() {
           reason: overrideReason,
         }),
       });
-      alert(`Status overridden to ${overrideStatus} and logged in tracking!`);
+      setMessage({ type: 'success', text: `Status overridden to ${overrideStatus} for Order #${overrideOrderId}!` });
       setOverrideOrderId(null);
       loadData();
     } catch (e: any) {
-      alert(`Override failed: ${e.message}`);
+      setMessage({ type: 'error', text: `Override failed: ${e.message}` });
     }
   };
 
@@ -189,6 +195,22 @@ export default function AdminControlCenter() {
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh All Data
         </button>
       </div>
+
+      {/* Alert / Feedback Message */}
+      {message && (
+        <div
+          className={`p-4 rounded-xl border text-xs font-semibold flex items-center justify-between transition ${
+            message.type === 'success'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              : 'bg-red-500/10 border-red-500/30 text-red-300'
+          }`}
+        >
+          <span>{message.text}</span>
+          <button onClick={() => setMessage(null)} className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-900/50">
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-gray-800 pb-3 overflow-x-auto text-xs font-semibold">

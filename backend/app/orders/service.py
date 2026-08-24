@@ -88,7 +88,7 @@ def create_order(
     return order
 
 
-def confirm_order(db: Session, order: Order, actor_user_id: int) -> Order:
+def confirm_order(db: Session, order: Order, actor_user_id: int, actor_role: UserRole = UserRole.CUSTOMER) -> Order:
     """Confirm an order - freezes pricing into an immutable snapshot."""
     # Validate transition
     try:
@@ -149,7 +149,7 @@ def confirm_order(db: Session, order: Order, actor_user_id: int) -> Order:
         previous_status=previous_status,
         new_status=OrderStatus.CONFIRMED.value,
         actor_user_id=actor_user_id,
-        actor_role=UserRole.CUSTOMER,
+        actor_role=actor_role,
         metadata={
             "total_charge": str(breakdown.total_charge),
             "billable_weight": str(breakdown.billable_weight),

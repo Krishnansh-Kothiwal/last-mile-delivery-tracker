@@ -265,7 +265,7 @@ export default function AdminControlCenter() {
   const handleTriggerAutoDispatch = async (orderId: number) => {
     setMessage(null);
     try {
-      const result = await fetchApi<any>(`/dispatch/auto-assign/${orderId}`, { method: 'POST' });
+      const result = await fetchApi<any>(`/admin/orders/${orderId}/auto-assign`, { method: 'POST' });
       setDispatchResult(result);
       setMessage({ type: 'success', text: `Auto-dispatch completed for Order #${orderId}` });
       loadData();
@@ -278,10 +278,9 @@ export default function AdminControlCenter() {
     if (!selectedAgentId) return;
     setMessage(null);
     try {
-      await fetchApi('/dispatch/manual-assign', {
+      await fetchApi(`/admin/orders/${orderId}/assign`, {
         method: 'POST',
         body: JSON.stringify({
-          order_id: orderId,
           agent_id: parseInt(selectedAgentId),
         }),
       });

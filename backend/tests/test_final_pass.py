@@ -150,3 +150,85 @@ class TestFinalPassRequirements:
         # Attempt admin endpoint as Agent
         a_resp = client.get("/admin/customers", headers=a_headers)
         assert a_resp.status_code in [401, 403]
+
+    def test_admin_create_order_ends_in_confirmed_with_frozen_snapshot(self, seeded_client):
+        """Admin-created order ends in CONFIRMED, has a frozen price snapshot matching pricing engine."""
+        client, db = seeded_client
+
+        login_resp = client.post("/auth/login", json={"email": "admin@test.com", "password": "pass"})
+        token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        cust_user = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
+
+        create_resp = client.post("/admin/orders", json={
+            "customer_id": cust_user.id,
+            "pickup_address": "123 MG Road",
+            "pickup_postal_code": "560001",
+            "drop_address": "456 Jayanagar",
+            "drop_postal_code": "560041",
+            "length": 20, "breadth": 15, "height": 10, "actual_weight": 2.5,
+            "order_type": "B2C", "payment_type": "PREPAID"
+        }, headers=headers)
+
+        assert create_resp.status_code == 201, create_resp.text
+        order_data = create_resp.json()
+        assert order_data["current_status"] == "CONFIRMED"
+        assert order_data["price_snapshot_id"] is not None
+        assert order_data["price_snapshot"] is not None
+
+        # Verify frozen price matches pricing quote engine result
+        quote_resp = client.post("/pricing/quote", json={
+            "pickup_postal_code": "560001", "drop_postal_code": "560041",
+            "length": 20, "breadth": 15, "height": 10, "actual_weight": 2.5,
+            "order_type": "B2C", "payment_type": "PREPAID"
+        })
+        assert quote_resp.status_code == 200
+        quote_data = quote_resp.json()
+        assert float(order_data["price_snapshot"]["total_charge"]) == float(quote_data["total_charge"])
+
+    def test_admin_created_order_can_be_manually_and_auto_assigned(self, seeded_client):
+        """Admin-created order is CONFIRMED and can immediately be manually or auto assigned."""
+        client, db = seeded_client
+
+        login_resp = client.post("/auth/login", json={"email": "admin@test.com", "password": "pass"})
+        token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        cust_user = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
+        from app.models import Agent
+        agent = db.query(Agent).first()
+
+        # Create Order 1 (for manual assign)
+        o1_resp = client.post("/admin/orders", json={
+            "customer_id": cust_user.id,
+            "pickup_address": "123 MG Road", "pickup_postal_code": "560001",
+            "drop_address": "456 Jayanagar", "drop_postal_code": "560041",
+            "length": 10, "breadth": 10, "height": 10, "actual_weight": 1.0,
+            "order_type": "B2C", "payment_type": "PREPAID"
+        }, headers=headers)
+        assert o1_resp.status_code == 201
+        o1_id = o1_resp.json()["id"]
+
+        # Manual Assign via POST /admin/orders/{order_id}/assign
+        m_assign_resp = client.post(f"/admin/orders/{o1_id}/assign", json={
+            "agent_id": agent.id
+        }, headers=headers)
+        assert m_assign_resp.status_code == 200, m_assign_resp.text
+        assert m_assign_resp.json()["assignment_id"] is not None
+
+        # Create Order 2 (for auto assign)
+        o2_resp = client.post("/admin/orders", json={
+            "customer_id": cust_user.id,
+            "pickup_address": "123 MG Road", "pickup_postal_code": "560001",
+            "drop_address": "456 Jayanagar", "drop_postal_code": "560041",
+            "length": 10, "breadth": 10, "height": 10, "actual_weight": 1.0,
+            "order_type": "B2C", "payment_type": "PREPAID"
+        }, headers=headers)
+        assert o2_resp.status_code == 201
+        o2_id = o2_resp.json()["id"]
+
+        # Auto Assign via POST /admin/orders/{order_id}/auto-assign
+        a_assign_resp = client.post(f"/admin/orders/{o2_id}/auto-assign", headers=headers)
+        assert a_assign_resp.status_code == 200, a_assign_resp.text
+

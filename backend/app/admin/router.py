@@ -9,11 +9,11 @@ from app.dependencies import get_current_admin
 from app.models import (
     User, UserRole, Order, OrderStatus, Agent, DeliveryAttempt,
     RateCardVersion, RateRule, CodRule, TrackingEventType,
-    Assignment, TrackingEvent,
+    Assignment, TrackingEvent, OrderPriceSnapshot,
 )
 from app.orders.schemas import OrderResponse, AdminOrderCreate
 from app.auth.schemas import UserResponse
-from app.orders.service import create_order
+from app.orders.service import create_order, confirm_order
 from app.orders.state_machine import validate_transition, IllegalTransitionError
 from app.dispatch.engine import auto_assign_order, manual_assign_order
 from app.dispatch.schemas import ManualAssignRequest, OverrideStatusRequest, AgentResponse
@@ -25,6 +25,26 @@ from app.admin.schemas import (
 )
 
 router = APIRouter()
+
+
+def _decimal_or_none(val):
+    return float(val) if val is not None else None
+
+
+def _snapshot_dict(snap: OrderPriceSnapshot) -> dict:
+    if not snap:
+        return None
+    return {
+        "id": snap.id,
+        "actual_weight": _decimal_or_none(snap.actual_weight),
+        "volumetric_weight": _decimal_or_none(snap.volumetric_weight),
+        "billable_weight": _decimal_or_none(snap.billable_weight),
+        "movement_type": snap.movement_type.value if snap.movement_type else None,
+        "base_charge": _decimal_or_none(snap.base_charge),
+        "weight_charge": _decimal_or_none(snap.weight_charge),
+        "cod_surcharge": _decimal_or_none(snap.cod_surcharge),
+        "total_charge": _decimal_or_none(snap.total_charge),
+    }
 
 
 # ─── Rate Card Versions ──────────────────────────────────────────────────────
@@ -223,9 +243,6 @@ def admin_list_orders(
                 }
 
     results = []
-    def _decimal_or_none(val):
-        return float(val) if val is not None else None
-
     for o in orders:
         snap = None
         if o.price_snapshot:
@@ -280,10 +297,11 @@ def admin_create_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin),
 ):
-    """Admin creates an order on behalf of a customer."""
+    """Admin creates an order on behalf of a customer and immediately confirms it."""
     customer = db.query(User).filter(User.id == payload.customer_id, User.role == UserRole.CUSTOMER).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Customer not found")
+
     order = create_order(
         db=db,
         customer_id=payload.customer_id,
@@ -300,8 +318,22 @@ def admin_create_order(
         actor_user_id=current_user.id,
         actor_role=UserRole.ADMIN,
     )
+
+    try:
+        confirmed_order = confirm_order(
+            db=db,
+            order=order,
+            actor_user_id=current_user.id,
+            actor_role=UserRole.ADMIN,
+        )
+    except Exception as e:
+        db.delete(order)
+        db.commit()
+        raise e
+
     background_tasks.add_task(schedule_notification_processing, db)
-    return order
+
+    return OrderResponse.model_validate(confirmed_order)
 
 
 @router.post("/orders/{order_id}/assign")

@@ -125,6 +125,16 @@ Copy `.env.example` to `backend/.env` and fill in:
 | `DATABASE_URL` | SQLAlchemy connection string | `sqlite:///./delivery_tracker.db` |
 | `SECRET_KEY` | JWT signing secret (change in production!) | `dev-secret-key` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT lifetime in minutes | `1440` |
+| `EMAIL_PROVIDER` | Notification provider for email (`console` or `smtp`) | `console` |
+| `SMTP_HOST` | SMTP server host address | `""` |
+| `SMTP_PORT` | SMTP server port | `587` |
+| `SMTP_USER` | SMTP authentication username | `""` |
+| `SMTP_PASSWORD` | SMTP authentication password | `""` |
+| `SMTP_FROM_EMAIL` | Sender address for emails | `noreply@deliverytracker.com` |
+| `SMS_PROVIDER` | Notification provider for SMS (`console` or `twilio`) | `console` |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID | `""` |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token | `""` |
+| `TWILIO_FROM_NUMBER` | Twilio sender phone number | `""` |
 
 Frontend environment (`.env.local`):
 

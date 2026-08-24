@@ -44,7 +44,7 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is inactive")
 
-    access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
+    access_token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
     return TokenResponse(access_token=access_token)
 
 

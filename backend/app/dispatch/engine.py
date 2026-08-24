@@ -115,10 +115,21 @@ def rank_candidates(
     return candidates
 
 
+from fastapi import HTTPException
+
+
+class NoEligibleAgentException(HTTPException):
+    """Raised when no eligible agent is available for assignment."""
+    def __init__(self, detail: str = "No eligible agents available for assignment"):
+        super().__init__(status_code=409, detail=detail)
+
+
 def auto_assign_order(
     db: Session,
     order: Order,
-    admin_user_id: int,
+    actor_user_id: Optional[int] = None,
+    actor_role: UserRole = UserRole.ADMIN,
+    admin_user_id: Optional[int] = None,
 ) -> dict:
     """
     Automatic assignment using transactional safety.
@@ -128,8 +139,11 @@ def auto_assign_order(
     4. Create assignment + tracking event + update workload
     5. Commit atomically
     """
+    effective_actor_id = actor_user_id if actor_user_id is not None else admin_user_id
+    if effective_actor_id is None:
+        raise HTTPException(status_code=400, detail="Actor user ID is required")
+
     if order.current_status not in (OrderStatus.CONFIRMED, OrderStatus.AWAITING_RESCHEDULE):
-        from fastapi import HTTPException
         raise HTTPException(
             status_code=400,
             detail=f"Cannot assign: order is in {order.current_status.value}"
@@ -138,17 +152,12 @@ def auto_assign_order(
     # Get pickup area coordinates
     pickup_area = db.query(Area).filter(Area.id == order.pickup_area_id).first()
     if not pickup_area or pickup_area.latitude is None:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Pickup area has no coordinates")
 
     # Stage A: Eligibility
     eligible_agents = get_eligible_agents(db)
     if not eligible_agents:
-        from fastapi import HTTPException
-        raise HTTPException(
-            status_code=409,
-            detail="No eligible agents available for assignment"
-        )
+        raise NoEligibleAgentException("No eligible agents available for assignment")
 
     # Stage B: Ranking
     candidates = rank_candidates(
@@ -157,11 +166,7 @@ def auto_assign_order(
         order.pickup_zone_id,
     )
     if not candidates:
-        from fastapi import HTTPException
-        raise HTTPException(
-            status_code=409,
-            detail="No eligible agents with valid locations found"
-        )
+        raise NoEligibleAgentException("No eligible agents with valid locations found")
 
     # Select best candidate
     selected = candidates[0]
@@ -172,11 +177,7 @@ def auto_assign_order(
         agent.availability_status != AgentAvailability.AVAILABLE
         or agent.active_delivery_count >= agent.max_concurrent_deliveries
     ):
-        from fastapi import HTTPException
-        raise HTTPException(
-            status_code=409,
-            detail="Selected agent is no longer available"
-        )
+        raise NoEligibleAgentException("Selected agent is no longer available")
 
     # Find or create delivery attempt
     attempt = (
@@ -211,7 +212,7 @@ def auto_assign_order(
         delivery_attempt_id=attempt.id,
         agent_id=agent.id,
         assignment_type=AssignmentType.AUTO,
-        assigned_by_user_id=admin_user_id,
+        assigned_by_user_id=effective_actor_id,
         score=Decimal(str(selected.total_score)),
         score_explanation=selected.explanation,
     )
@@ -234,8 +235,8 @@ def auto_assign_order(
         event_type=TrackingEventType.AGENT_ASSIGNED,
         previous_status=previous_status,
         new_status=OrderStatus.ASSIGNED.value,
-        actor_user_id=admin_user_id,
-        actor_role=UserRole.ADMIN,
+        actor_user_id=effective_actor_id,
+        actor_role=actor_role,
         delivery_attempt_id=attempt.id,
         metadata={
             "agent_id": agent.id,
@@ -279,11 +280,16 @@ def manual_assign_order(
     db: Session,
     order: Order,
     agent_id: int,
-    admin_user_id: int,
+    actor_user_id: Optional[int] = None,
+    actor_role: UserRole = UserRole.ADMIN,
+    admin_user_id: Optional[int] = None,
 ) -> dict:
-    """Manual assignment by admin."""
+    """Manual assignment by admin or authorized actor."""
+    effective_actor_id = actor_user_id if actor_user_id is not None else admin_user_id
+    if effective_actor_id is None:
+        raise HTTPException(status_code=400, detail="Actor user ID is required")
+
     if order.current_status not in (OrderStatus.CONFIRMED, OrderStatus.AWAITING_RESCHEDULE):
-        from fastapi import HTTPException
         raise HTTPException(
             status_code=400,
             detail=f"Cannot assign: order is in {order.current_status.value}"
@@ -291,15 +297,12 @@ def manual_assign_order(
 
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Agent not found")
 
     if agent.availability_status != AgentAvailability.AVAILABLE:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Agent is not available")
 
     if agent.active_delivery_count >= agent.max_concurrent_deliveries:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Agent is at maximum capacity")
 
     # Find or create delivery attempt
@@ -333,7 +336,7 @@ def manual_assign_order(
         delivery_attempt_id=attempt.id,
         agent_id=agent.id,
         assignment_type=AssignmentType.MANUAL,
-        assigned_by_user_id=admin_user_id,
+        assigned_by_user_id=effective_actor_id,
     )
     db.add(assignment)
 
@@ -349,8 +352,8 @@ def manual_assign_order(
         event_type=TrackingEventType.AGENT_ASSIGNED,
         previous_status=previous_status,
         new_status=OrderStatus.ASSIGNED.value,
-        actor_user_id=admin_user_id,
-        actor_role=UserRole.ADMIN,
+        actor_user_id=effective_actor_id,
+        actor_role=actor_role,
         delivery_attempt_id=attempt.id,
         metadata={
             "agent_id": agent.id,

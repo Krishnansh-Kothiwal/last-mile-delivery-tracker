@@ -69,6 +69,7 @@ class TrackingEventType(str, enum.Enum):
     NEW_ATTEMPT_CREATED = "NEW_ATTEMPT_CREATED"
     DELIVERED = "DELIVERED"
     ADMIN_OVERRIDE = "ADMIN_OVERRIDE"
+    AUTO_ASSIGNMENT_FAILED = "AUTO_ASSIGNMENT_FAILED"
 
 
 class NotificationChannel(str, enum.Enum):

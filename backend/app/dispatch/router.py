@@ -1,5 +1,6 @@
 """Delivery agent router - operational interface."""
 from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
 
@@ -164,6 +165,7 @@ def _agent_transition(
     target_order_status: OrderStatus,
     target_attempt_status: DeliveryAttemptStatus,
     event_type: TrackingEventType,
+    background_tasks: Optional[BackgroundTasks] = None,
 ):
     """Common logic for agent state transitions."""
     agent = _get_agent_profile(db, current_user)
@@ -200,22 +202,24 @@ def _agent_transition(
     )
 
     db.commit()
+    if background_tasks:
+        background_tasks.add_task(schedule_notification_processing, db)
     return {"order_id": order.id, "status": order.current_status.value}
 
 
 @router.post("/orders/{order_id}/pickup")
-def pickup_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_agent)):
-    return _agent_transition(db, order_id, current_user, OrderStatus.PICKED_UP, DeliveryAttemptStatus.PICKED_UP, TrackingEventType.PICKED_UP)
+def pickup_order(order_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_agent)):
+    return _agent_transition(db, order_id, current_user, OrderStatus.PICKED_UP, DeliveryAttemptStatus.PICKED_UP, TrackingEventType.PICKED_UP, background_tasks)
 
 
 @router.post("/orders/{order_id}/in-transit")
-def in_transit_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_agent)):
-    return _agent_transition(db, order_id, current_user, OrderStatus.IN_TRANSIT, DeliveryAttemptStatus.IN_TRANSIT, TrackingEventType.IN_TRANSIT)
+def in_transit_order(order_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_agent)):
+    return _agent_transition(db, order_id, current_user, OrderStatus.IN_TRANSIT, DeliveryAttemptStatus.IN_TRANSIT, TrackingEventType.IN_TRANSIT, background_tasks)
 
 
 @router.post("/orders/{order_id}/out-for-delivery")
-def out_for_delivery_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_agent)):
-    return _agent_transition(db, order_id, current_user, OrderStatus.OUT_FOR_DELIVERY, DeliveryAttemptStatus.OUT_FOR_DELIVERY, TrackingEventType.OUT_FOR_DELIVERY)
+def out_for_delivery_order(order_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_agent)):
+    return _agent_transition(db, order_id, current_user, OrderStatus.OUT_FOR_DELIVERY, DeliveryAttemptStatus.OUT_FOR_DELIVERY, TrackingEventType.OUT_FOR_DELIVERY, background_tasks)
 
 
 @router.post("/orders/{order_id}/deliver")
@@ -225,13 +229,13 @@ def deliver_order(order_id: int, background_tasks: BackgroundTasks, db: Session 
     result = _agent_transition(
         db, order_id, current_user,
         OrderStatus.DELIVERED, DeliveryAttemptStatus.DELIVERED, TrackingEventType.DELIVERED,
+        background_tasks,
     )
-    # Fix #9: Close active assignment on delivery
+    # Close active assignment on delivery
     _close_active_assignment(db, order_id, agent.id)
     # Decrement agent workload
     agent.active_delivery_count = max(0, agent.active_delivery_count - 1)
     db.commit()
-    background_tasks.add_task(schedule_notification_processing, db)
     return result
 
 

@@ -1,6 +1,6 @@
 """Admin router - rate cards, orders management, agent management, overrides."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
@@ -15,7 +15,7 @@ from app.orders.service import create_order
 from app.orders.state_machine import validate_transition, IllegalTransitionError
 from app.dispatch.engine import auto_assign_order, manual_assign_order
 from app.dispatch.schemas import ManualAssignRequest, OverrideStatusRequest, AgentResponse
-from app.tracking.service import create_status_change_event_and_notification
+from app.tracking.service import create_status_change_event_and_notification, schedule_notification_processing
 from app.admin.schemas import (
     RateCardVersionCreate, RateCardVersionResponse,
     RateRuleCreate, RateRuleResponse,
@@ -160,7 +160,7 @@ def admin_list_orders(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ):
-    """Admin lists all orders with optional filters (status, zone_id, agent_id)."""
+    """Admin lists all orders with optional filters (status, zone_id, active agent_id)."""
     query = db.query(Order).options(joinedload(Order.price_snapshot))
     if status:
         query = query.filter(Order.current_status == status)
@@ -169,10 +169,11 @@ def admin_list_orders(
             (Order.pickup_zone_id == zone_id) | (Order.drop_zone_id == zone_id)
         )
     if agent_id:
-        # Use a scalar subquery to avoid duplicate rows from joining assignments
+        # Filter for active assignment only (unassigned_at IS NULL) to exclude closed/historical assignments
         from sqlalchemy import select as sa_select
         agent_order_subq = sa_select(Assignment.order_id).where(
-            Assignment.agent_id == agent_id
+            Assignment.agent_id == agent_id,
+            Assignment.unassigned_at.is_(None),
         ).distinct()
         query = query.filter(Order.id.in_(agent_order_subq))
     orders = query.order_by(Order.created_at.desc()).all()
@@ -182,6 +183,7 @@ def admin_list_orders(
 @router.post("/orders", response_model=OrderResponse, status_code=201)
 def admin_create_order(
     payload: AdminOrderCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin),
 ):
@@ -189,7 +191,7 @@ def admin_create_order(
     customer = db.query(User).filter(User.id == payload.customer_id, User.role == UserRole.CUSTOMER).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Customer not found")
-    return create_order(
+    order = create_order(
         db=db,
         customer_id=payload.customer_id,
         pickup_address=payload.pickup_address,
@@ -205,12 +207,15 @@ def admin_create_order(
         actor_user_id=current_user.id,
         actor_role=UserRole.ADMIN,
     )
+    background_tasks.add_task(schedule_notification_processing, db)
+    return order
 
 
 @router.post("/orders/{order_id}/assign")
 def admin_assign_order(
     order_id: int,
     payload: ManualAssignRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin),
 ):
@@ -218,12 +223,15 @@ def admin_assign_order(
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    return manual_assign_order(db, order, payload.agent_id, current_user.id)
+    res = manual_assign_order(db, order, payload.agent_id, current_user.id, UserRole.ADMIN)
+    background_tasks.add_task(schedule_notification_processing, db)
+    return res
 
 
 @router.post("/orders/{order_id}/auto-assign")
 def admin_auto_assign_order(
     order_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin),
 ):
@@ -231,13 +239,16 @@ def admin_auto_assign_order(
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    return auto_assign_order(db, order, current_user.id)
+    res = auto_assign_order(db, order, current_user.id, UserRole.ADMIN)
+    background_tasks.add_task(schedule_notification_processing, db)
+    return res
 
 
 @router.post("/orders/{order_id}/override-status")
 def admin_override_status(
     order_id: int,
     payload: OverrideStatusRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin),
 ):
@@ -272,6 +283,7 @@ def admin_override_status(
     )
 
     db.commit()
+    background_tasks.add_task(schedule_notification_processing, db)
     return {
         "order_id": order.id,
         "previous_status": previous_status,

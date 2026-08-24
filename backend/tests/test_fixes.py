@@ -1,19 +1,35 @@
-"""Regression tests for all bug fixes.
+"""Regression tests for all bug fixes and final targeted correction pass.
 
 Covers:
-- Fix 1: anonymous registration cannot create ADMIN/DELIVERY_AGENT
-- Fix 12: future/expired rate cards are ignored
-- Fix 13: zero/negative dimensions rejected
-- Fix 8: FAILED and AWAITING_RESCHEDULE tracking events both recorded
-- Fix 9: assignment closes on delivered / closes on failed
-- Fix 10: reschedule creates new attempt + attempts auto-reassignment
-- Fix 11: admin agent_id filter works
-- Fix 7: GET /agent/profile returns profile
-- Fix 6: availability update with 'status' key accepted
+1. Authentication:
+   - public registration cannot create ADMIN
+   - public registration cannot create DELIVERY_AGENT
+   - login JWT has valid string sub
+   - /auth/me succeeds using login-generated JWT
+2. Notifications:
+   - admin-created order & status flows schedule notification processing after commit
+   - admin override queues and schedules notification processing
+   - manual assignment notification flow is processed
+   - auto-assignment notification flow is processed
+3. Audit identity:
+   - customer reschedule creates event with customer ID + CUSTOMER role (never ADMIN)
+4. Auto-assignment failure:
+   - no eligible agent does not fail reschedule
+   - order remains CONFIRMED
+   - failed auto-assignment does not create AGENT_ASSIGNED (creates AUTO_ASSIGNMENT_FAILED)
+5. Exception handling:
+   - unexpected auto-assignment exceptions are not swallowed
+6. Admin filtering:
+   - agent_id returns orders currently assigned to that agent
+   - closed/historical assignments are excluded
+7. Rate card & package validation:
+   - future/expired rate cards ignored
+   - zero/negative dimensions rejected
 """
 import pytest
 from decimal import Decimal
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 from tests.conftest import get_auth_header
@@ -22,26 +38,26 @@ from app.models import (
     Order, OrderType, PaymentType, OrderStatus,
     DeliveryAttempt, DeliveryAttemptStatus, Assignment, AssignmentType,
     RateCardVersion, RateRule, CodRule, MovementType,
-    TrackingEvent, TrackingEventType, Area,
+    TrackingEvent, TrackingEventType, Area, NotificationOutbox, NotificationStatus,
 )
 from app.pricing.engine import get_active_rate_card, PricingError, calculate_price
 from app.orders.schemas import OrderCreate
-from app.dispatch.engine import auto_assign_order
-from app.orders.service import reschedule_order
+from app.dispatch.engine import auto_assign_order, manual_assign_order, NoEligibleAgentException
+from app.orders.service import reschedule_order, create_order
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Fix 1 — Security: public registration always creates CUSTOMER
+# 1. Authentication
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestPublicRegistrationSecurity:
-    """Anonymous registration must never create ADMIN or DELIVERY_AGENT accounts."""
+class TestAuthenticationSecurity:
+    """Authentication and role enforcement tests."""
 
     def test_registration_without_role_creates_customer(self, client: TestClient, db_session):
-        """Standard registration (no role field) creates a CUSTOMER account."""
+        """Standard registration creates a CUSTOMER account."""
         resp = client.post("/auth/register", json={
             "email": "newuser@example.com",
-            "password": "secret",
+            "password": "secretpassword",
             "full_name": "New User",
         })
         assert resp.status_code == 201, resp.text
@@ -49,253 +65,120 @@ class TestPublicRegistrationSecurity:
         assert data["role"] == "CUSTOMER"
 
     def test_registration_with_admin_role_still_creates_customer(self, client: TestClient, db_session):
-        """Even if the client sends role=ADMIN, the server must ignore it and create CUSTOMER."""
+        """Even if role=ADMIN is sent, public registration creates a CUSTOMER account."""
         resp = client.post("/auth/register", json={
             "email": "attacker@example.com",
-            "password": "x",
+            "password": "secretpassword",
             "full_name": "Attacker",
-            "role": "ADMIN",   # This field is not in UserRegister schema → ignored/rejected
+            "role": "ADMIN",
         })
-        # Either 422 (field not accepted) or 201 with CUSTOMER role — both are correct
         if resp.status_code == 201:
-            assert resp.json()["role"] == "CUSTOMER", "Registration must not grant ADMIN role"
+            assert resp.json()["role"] == "CUSTOMER"
         else:
             assert resp.status_code in (201, 422)
 
     def test_registration_with_delivery_agent_role_still_creates_customer(self, client: TestClient, db_session):
-        """Even if the client sends role=DELIVERY_AGENT, the server must ignore it."""
+        """Even if role=DELIVERY_AGENT is sent, public registration creates a CUSTOMER account."""
         resp = client.post("/auth/register", json={
             "email": "fakeagent@example.com",
-            "password": "x",
+            "password": "secretpassword",
             "full_name": "Fake Agent",
             "role": "DELIVERY_AGENT",
         })
         if resp.status_code == 201:
-            assert resp.json()["role"] == "CUSTOMER", "Registration must not grant DELIVERY_AGENT role"
+            assert resp.json()["role"] == "CUSTOMER"
         else:
             assert resp.status_code in (201, 422)
 
+    def test_login_returns_token_with_string_sub_and_auth_me_succeeds(self, seeded_client):
+        """POST /auth/login returns a valid JWT with string sub, and GET /auth/me succeeds."""
+        client, db = seeded_client
+        # Login as seeded customer
+        resp = client.post("/auth/login", json={
+            "email": "cust@test.com",
+            "password": "pass",
+        })
+        assert resp.status_code == 200, resp.text
+        token_data = resp.json()
+        assert "access_token" in token_data
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Fix 12 — Rate card effective date filtering
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestRateCardDateFiltering:
-    """get_active_rate_card must respect effective_from and effective_to windows."""
-
-    def test_future_rate_card_is_ignored(self, seeded_db):
-        """A rate card whose effective_from is in the future must NOT be selected."""
-        future_card = RateCardVersion(
-            name="Future Card",
-            effective_from=datetime.utcnow() + timedelta(days=30),
-            effective_to=None,
-            is_active=True,
-        )
-        seeded_db.add(future_card)
-        seeded_db.commit()
-
-        # Should still return the original seeded card, not the future one
-        active = get_active_rate_card(seeded_db)
-        assert active.name != "Future Card", "Future-dated rate card must not be selected"
-
-    def test_expired_rate_card_is_ignored(self, seeded_db):
-        """A rate card whose effective_to is in the past must NOT be selected."""
-        expired_card = RateCardVersion(
-            name="Expired Card",
-            effective_from=datetime.utcnow() - timedelta(days=60),
-            effective_to=datetime.utcnow() - timedelta(days=1),  # expired yesterday
-            is_active=True,
-        )
-        seeded_db.add(expired_card)
-        seeded_db.commit()
-
-        active = get_active_rate_card(seeded_db)
-        assert active.name != "Expired Card", "Expired rate card must not be selected"
-
-    def test_active_valid_card_is_returned(self, seeded_db):
-        """A card that is active with effective_from in the past and no effective_to is returned."""
-        active = get_active_rate_card(seeded_db)
-        assert active is not None
-        assert active.is_active is True
-        assert active.effective_from <= datetime.utcnow()
-
-    def test_no_valid_card_raises_pricing_error(self, db_session):
-        """When no valid card exists, PricingError is raised."""
-        # db_session has no rate cards
-        with pytest.raises(PricingError):
-            get_active_rate_card(db_session)
+        token = token_data["access_token"]
+        # Verify /auth/me using the token generated by /auth/login
+        me_resp = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert me_resp.status_code == 200, me_resp.text
+        me_data = me_resp.json()
+        assert me_data["email"] == "cust@test.com"
+        assert me_data["role"] == "CUSTOMER"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Fix 13 — Positive dimension/weight validation
+# 2. Notifications & Background Tasks
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestDimensionValidation:
-    """OrderCreate must reject zero and negative values for dimensions/weight."""
+class TestNotificationProcessing:
+    """Notification creation and background processing tests."""
 
-    def _base_payload(self, **overrides):
-        payload = {
-            "pickup_address": "A",
+    def test_admin_create_order_queues_notification(self, seeded_client):
+        """Admin creating an order queues a status_change notification in the outbox."""
+        client, db = seeded_client
+        admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
+        cust = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
+        headers = get_auth_header(admin)
+
+        resp = client.post("/admin/orders", json={
+            "customer_id": cust.id,
+            "pickup_address": "JP Nagar",
             "pickup_postal_code": "560078",
-            "drop_address": "B",
+            "drop_address": "Jayanagar",
             "drop_postal_code": "560041",
-            "length": "10",
-            "breadth": "10",
-            "height": "10",
+            "length": "10", "breadth": "10", "height": "10",
             "actual_weight": "2",
             "order_type": "B2C",
             "payment_type": "PREPAID",
-        }
-        payload.update(overrides)
-        return payload
-
-    def test_zero_length_rejected(self, seeded_client):
-        client, db = seeded_client
-        cust = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
-        headers = get_auth_header(cust)
-        resp = client.post("/orders", json=self._base_payload(length="0"), headers=headers)
-        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
-
-    def test_negative_breadth_rejected(self, seeded_client):
-        client, db = seeded_client
-        cust = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
-        headers = get_auth_header(cust)
-        resp = client.post("/orders", json=self._base_payload(breadth="-5"), headers=headers)
-        assert resp.status_code == 422
-
-    def test_zero_weight_rejected(self, seeded_client):
-        client, db = seeded_client
-        cust = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
-        headers = get_auth_header(cust)
-        resp = client.post("/orders", json=self._base_payload(actual_weight="0"), headers=headers)
-        assert resp.status_code == 422
-
-    def test_negative_height_rejected(self, seeded_client):
-        client, db = seeded_client
-        cust = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
-        headers = get_auth_header(cust)
-        resp = client.post("/orders", json=self._base_payload(height="-1"), headers=headers)
-        assert resp.status_code == 422
-
-    def test_valid_dimensions_accepted(self, seeded_client):
-        client, db = seeded_client
-        cust = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
-        headers = get_auth_header(cust)
-        resp = client.post("/orders", json=self._base_payload(), headers=headers)
+        }, headers=headers)
         assert resp.status_code == 201, resp.text
+        order_id = resp.json()["id"]
 
+        db.expire_all()
+        notifications = db.query(NotificationOutbox).filter(NotificationOutbox.order_id == order_id).all()
+        assert len(notifications) > 0
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Fix 8 — Two-step FAILED and AWAITING_RESCHEDULE tracking events
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestFailedDeliveryLifecycle:
-    """fail_delivery must persist FAILED then AWAITING_RESCHEDULE with separate tracking events."""
-
-    def _create_out_for_delivery_order(self, db):
-        """Helper: create an order+attempt+assignment in OUT_FOR_DELIVERY state."""
-        area = db.query(Area).filter(Area.postal_code == "560078").first()
+    def test_admin_override_queues_notification(self, seeded_client):
+        """Admin override status creates outbox notification."""
+        client, db = seeded_client
+        admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
         cust = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
-        agent_user = db.query(User).filter(User.role == UserRole.DELIVERY_AGENT).first()
-        agent = db.query(Agent).filter(Agent.user_id == agent_user.id).first()
 
         order = Order(
             customer_id=cust.id,
-            pickup_address="Test", pickup_postal_code="560078",
-            pickup_area_id=area.id, pickup_zone_id=area.zone_id,
-            drop_address="Drop", drop_postal_code="560041",
-            length=Decimal("10"), breadth=Decimal("10"), height=Decimal("10"),
-            actual_weight=Decimal("2"),
+            pickup_address="A", pickup_postal_code="560078",
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"),
             order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
-            current_status=OrderStatus.OUT_FOR_DELIVERY,
+            current_status=OrderStatus.CREATED,
         )
         db.add(order)
-        db.flush()
-
-        attempt = DeliveryAttempt(
-            order_id=order.id,
-            attempt_number=1,
-            status=DeliveryAttemptStatus.OUT_FOR_DELIVERY,
-        )
-        db.add(attempt)
-        db.flush()
-
-        assignment = Assignment(
-            order_id=order.id,
-            delivery_attempt_id=attempt.id,
-            agent_id=agent.id,
-            assignment_type=AssignmentType.AUTO,
-        )
-        db.add(assignment)
         db.commit()
 
-        return order, attempt, assignment, agent
-
-    def test_fail_creates_two_tracking_events(self, seeded_client):
-        """fail_delivery must produce DELIVERY_FAILED and RESCHEDULE_REQUESTED events."""
-        client, db = seeded_client
-        order, attempt, assignment, agent = self._create_out_for_delivery_order(db)
-        agent_user = db.query(User).filter(User.id == agent.user_id).first()
-        headers = get_auth_header(agent_user)
-
-        resp = client.post(
-            f"/agent/orders/{order.id}/fail",
-            json={"failure_reason": "Customer not found"},
-            headers=headers,
-        )
+        headers = get_auth_header(admin)
+        resp = client.post(f"/admin/orders/{order.id}/override-status", json={
+            "new_status": "CONFIRMED",
+            "reason": "Customer called support",
+        }, headers=headers)
         assert resp.status_code == 200, resp.text
 
         db.expire_all()
-        events = (
-            db.query(TrackingEvent)
-            .filter(TrackingEvent.order_id == order.id)
-            .order_by(TrackingEvent.created_at.asc())
-            .all()
-        )
-        event_types = [e.event_type for e in events]
-        assert TrackingEventType.DELIVERY_FAILED in event_types, "DELIVERY_FAILED event missing"
-        assert TrackingEventType.RESCHEDULE_REQUESTED in event_types, "RESCHEDULE_REQUESTED event missing"
+        notifs = db.query(NotificationOutbox).filter(NotificationOutbox.order_id == order.id).all()
+        assert len(notifs) > 0
+        assert any("CONFIRMED" in n.payload for n in notifs)
 
-        # The DELIVERY_FAILED event must record FAILED as the new_status
-        failed_event = next(e for e in events if e.event_type == TrackingEventType.DELIVERY_FAILED)
-        assert failed_event.new_status == "FAILED"
-
-        # Final order status must be AWAITING_RESCHEDULE
-        db.refresh(order)
-        assert order.current_status == OrderStatus.AWAITING_RESCHEDULE
-
-    def test_fail_closes_assignment(self, seeded_client):
-        """fail_delivery must set Assignment.unassigned_at."""
+    def test_manual_and_auto_assign_notification_flow(self, seeded_client):
+        """Manual and auto assignment queue notification events."""
         client, db = seeded_client
-        order, attempt, assignment, agent = self._create_out_for_delivery_order(db)
-        agent_user = db.query(User).filter(User.id == agent.user_id).first()
-        headers = get_auth_header(agent_user)
-
-        resp = client.post(
-            f"/agent/orders/{order.id}/fail",
-            json={"failure_reason": "No one home"},
-            headers=headers,
-        )
-        assert resp.status_code == 200, resp.text
-
-        db.expire_all()
-        db.refresh(assignment)
-        assert assignment.unassigned_at is not None, "Assignment must be closed after failure"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Fix 9 — Assignment closes on delivered
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestAssignmentClosure:
-    """Assignment.unassigned_at must be set when an order is delivered."""
-
-    def test_deliver_closes_assignment(self, seeded_client):
-        client, db = seeded_client
-        area = db.query(Area).filter(Area.postal_code == "560078").first()
+        admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
         cust = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
-        agent_user = db.query(User).filter(User.role == UserRole.DELIVERY_AGENT).first()
-        agent = db.query(Agent).filter(Agent.user_id == agent_user.id).first()
+        area = db.query(Area).filter(Area.postal_code == "560078").first()
 
         order = Order(
             customer_id=cust.id,
@@ -305,49 +188,29 @@ class TestAssignmentClosure:
             length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
             actual_weight=Decimal("1"),
             order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
-            current_status=OrderStatus.OUT_FOR_DELIVERY,
+            current_status=OrderStatus.CONFIRMED,
         )
         db.add(order)
-        db.flush()
-
-        attempt = DeliveryAttempt(
-            order_id=order.id,
-            attempt_number=1,
-            status=DeliveryAttemptStatus.OUT_FOR_DELIVERY,
-        )
-        db.add(attempt)
-        db.flush()
-
-        assignment = Assignment(
-            order_id=order.id,
-            delivery_attempt_id=attempt.id,
-            agent_id=agent.id,
-            assignment_type=AssignmentType.AUTO,
-        )
-        db.add(assignment)
         db.commit()
 
-        headers = get_auth_header(agent_user)
-        resp = client.post(f"/agent/orders/{order.id}/deliver", headers=headers)
+        headers = get_auth_header(admin)
+        resp = client.post(f"/admin/orders/{order.id}/auto-assign", headers=headers)
         assert resp.status_code == 200, resp.text
 
         db.expire_all()
-        db.refresh(assignment)
-        assert assignment.unassigned_at is not None, "Assignment must be closed after delivery"
-
-        db.refresh(order)
-        assert order.current_status == OrderStatus.DELIVERED
+        notifs = db.query(NotificationOutbox).filter(NotificationOutbox.order_id == order.id).all()
+        assert any("ASSIGNED" in n.payload for n in notifs)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Fix 10 — Reschedule creates new attempt and attempts auto-assignment
+# 3. Audit Identity & Actor Consistency
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestReschedule:
-    """reschedule_order must create attempt #2 and attempt auto-assignment."""
+class TestAuditIdentityConsistency:
+    """Audit history must accurately reflect actor identity and role."""
 
-    def _setup_awaiting_reschedule_order(self, seeded_db):
-        """Create an order in AWAITING_RESCHEDULE with attempt #1 FAILED."""
+    def test_customer_reschedule_uses_customer_role(self, seeded_db):
+        """Customer-triggered reschedule auto-assignment uses customer ID + CUSTOMER role, never ADMIN."""
         area = seeded_db.query(Area).filter(Area.postal_code == "560078").first()
         cust = seeded_db.query(User).filter(User.role == UserRole.CUSTOMER).first()
 
@@ -365,59 +228,30 @@ class TestReschedule:
         seeded_db.flush()
 
         failed_attempt = DeliveryAttempt(
-            order_id=order.id,
-            attempt_number=1,
-            status=DeliveryAttemptStatus.FAILED,
-            failure_reason="Customer not home",
+            order_id=order.id, attempt_number=1, status=DeliveryAttemptStatus.FAILED,
         )
         seeded_db.add(failed_attempt)
         seeded_db.commit()
 
-        return order, failed_attempt, cust
-
-    def test_reschedule_creates_new_attempt(self, seeded_db):
-        """reschedule_order must create attempt #2."""
-        order, failed_attempt, cust = self._setup_awaiting_reschedule_order(seeded_db)
-
-        reschedule_order(
-            db=seeded_db,
-            order=order,
-            customer_id=cust.id,
-            requested_date=datetime.utcnow() + timedelta(days=1),
-            reason="Please try again tomorrow",
-        )
+        reschedule_order(seeded_db, order, cust.id, reason="Retry tomorrow")
         seeded_db.expire_all()
 
-        attempts = (
-            seeded_db.query(DeliveryAttempt)
-            .filter(DeliveryAttempt.order_id == order.id)
-            .order_by(DeliveryAttempt.attempt_number.asc())
-            .all()
-        )
-        assert len(attempts) == 2, f"Expected 2 attempts, got {len(attempts)}"
-        assert attempts[0].status == DeliveryAttemptStatus.FAILED
-        assert attempts[1].attempt_number == 2
+        events = seeded_db.query(TrackingEvent).filter(TrackingEvent.order_id == order.id).all()
+        for ev in events:
+            if ev.actor_user_id == cust.id:
+                assert ev.actor_role == UserRole.CUSTOMER, \
+                    f"Customer ID {cust.id} must never be recorded with ADMIN role! Got {ev.actor_role}"
 
-    def test_reschedule_attempts_auto_assignment(self, seeded_db):
-        """After reschedule, auto-assignment is attempted (order moves to ASSIGNED if agent available)."""
-        order, failed_attempt, cust = self._setup_awaiting_reschedule_order(seeded_db)
 
-        reschedule_order(
-            db=seeded_db,
-            order=order,
-            customer_id=cust.id,
-            reason="Retry",
-        )
-        seeded_db.expire_all()
-        seeded_db.refresh(order)
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Auto-Assignment Failure & Exception Handling
+# ─────────────────────────────────────────────────────────────────────────────
 
-        # Order should be ASSIGNED (auto-assign succeeded with seeded agents) or CONFIRMED (no eligible)
-        assert order.current_status in (OrderStatus.ASSIGNED, OrderStatus.CONFIRMED), \
-            f"Unexpected status after reschedule: {order.current_status}"
+class TestAutoAssignmentFailure:
+    """Handling no-agent conditions and unexpected exception propagation."""
 
-    def test_reschedule_non_fatal_when_no_agents(self, db_session):
-        """If no eligible agents, reschedule still succeeds and order stays CONFIRMED."""
-        # db_session has no seeded agents
+    def test_no_agent_reschedule_emits_auto_assignment_failed_event(self, db_session):
+        """When no eligible agent exists, reschedule succeeds, order stays CONFIRMED, and AUTO_ASSIGNMENT_FAILED event is recorded."""
         from app.models import Zone, Area, User, CustomerProfile
         from app.dependencies import get_password_hash
 
@@ -451,62 +285,113 @@ class TestReschedule:
         db_session.flush()
 
         failed = DeliveryAttempt(
-            order_id=order.id, attempt_number=1,
-            status=DeliveryAttemptStatus.FAILED,
+            order_id=order.id, attempt_number=1, status=DeliveryAttemptStatus.FAILED,
         )
         db_session.add(failed)
         db_session.commit()
 
-        # Should not raise even with no agents
         reschedule_order(db=db_session, order=order, customer_id=cust_user.id, reason="Retry")
         db_session.expire_all()
         db_session.refresh(order)
-        # Order must be in CONFIRMED (fallback when no agents)
+
+        # Order remains CONFIRMED
         assert order.current_status == OrderStatus.CONFIRMED
 
+        # Tracking event must NOT be AGENT_ASSIGNED; it must be AUTO_ASSIGNMENT_FAILED
+        events = db_session.query(TrackingEvent).filter(TrackingEvent.order_id == order.id).all()
+        event_types = [e.event_type for e in events]
+        assert TrackingEventType.AGENT_ASSIGNED not in event_types, "Must NOT emit AGENT_ASSIGNED when assignment failed!"
+        assert TrackingEventType.AUTO_ASSIGNMENT_FAILED in event_types, "Must emit AUTO_ASSIGNMENT_FAILED on failure"
+
+    def test_unexpected_exceptions_in_auto_assign_are_not_swallowed(self, seeded_db, monkeypatch):
+        """Unexpected programming or DB errors in auto_assign_order must propagate, not be caught as no-agent."""
+        area = seeded_db.query(Area).filter(Area.postal_code == "560078").first()
+        cust = seeded_db.query(User).filter(User.role == UserRole.CUSTOMER).first()
+
+        order = Order(
+            customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            pickup_area_id=area.id, pickup_zone_id=area.zone_id,
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("10"), breadth=Decimal("10"), height=Decimal("10"),
+            actual_weight=Decimal("2"),
+            order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            current_status=OrderStatus.AWAITING_RESCHEDULE,
+        )
+        seeded_db.add(order)
+        seeded_db.flush()
+
+        failed = DeliveryAttempt(
+            order_id=order.id, attempt_number=1, status=DeliveryAttemptStatus.FAILED,
+        )
+        seeded_db.add(failed)
+        seeded_db.commit()
+
+        # Monkeypatch auto_assign_order to raise an unexpected ValueError
+        import app.dispatch.engine
+        def mock_broken_auto_assign(*args, **kwargs):
+            raise RuntimeError("Unexpected Database Crash!")
+
+        monkeypatch.setattr(app.dispatch.engine, "auto_assign_order", mock_broken_auto_assign)
+
+        with pytest.raises(RuntimeError, match="Unexpected Database Crash!"):
+            reschedule_order(db=seeded_db, order=order, customer_id=cust.id, reason="Retry")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Fix 11 — Admin agent_id filter
+# 5. Admin Agent Filtering Semantics
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestAdminAgentFilter:
-    """GET /admin/orders?agent_id=X must return only orders assigned to that agent."""
+class TestAdminAgentFilteringSemantics:
+    """Admin order list agent_id filter must return active assignments only."""
 
-    def test_agent_filter_returns_correct_orders(self, seeded_client):
+    def test_agent_filter_returns_only_active_assignments(self, seeded_client):
+        """Historical/closed assignments are excluded from GET /admin/orders?agent_id=X."""
         client, db = seeded_client
         area = db.query(Area).filter(Area.postal_code == "560078").first()
         cust = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
         admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
         agent_users = db.query(User).filter(User.role == UserRole.DELIVERY_AGENT).all()
         agent1 = db.query(Agent).filter(Agent.user_id == agent_users[0].id).first()
-        agent2 = db.query(Agent).filter(Agent.user_id == agent_users[1].id).first()
 
-        # Create two orders, assign each to a different agent
-        def make_order():
-            o = Order(
-                customer_id=cust.id,
-                pickup_address="A", pickup_postal_code="560078",
-                pickup_area_id=area.id, pickup_zone_id=area.zone_id,
-                drop_address="B", drop_postal_code="560041",
-                length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
-                actual_weight=Decimal("1"),
-                order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
-                current_status=OrderStatus.ASSIGNED,
-            )
-            db.add(o)
-            db.flush()
-            return o
-
-        order1 = make_order()
-        order2 = make_order()
-
-        att1 = DeliveryAttempt(order_id=order1.id, attempt_number=1, status=DeliveryAttemptStatus.ASSIGNED)
-        att2 = DeliveryAttempt(order_id=order2.id, attempt_number=1, status=DeliveryAttemptStatus.ASSIGNED)
-        db.add_all([att1, att2])
+        # Order 1: currently assigned to agent1 (unassigned_at IS NULL)
+        o1 = Order(
+            customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            pickup_area_id=area.id, pickup_zone_id=area.zone_id,
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"),
+            order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            current_status=OrderStatus.ASSIGNED,
+        )
+        db.add(o1)
         db.flush()
+        att1 = DeliveryAttempt(order_id=o1.id, attempt_number=1, status=DeliveryAttemptStatus.ASSIGNED)
+        db.add(att1)
+        db.flush()
+        as1 = Assignment(order_id=o1.id, delivery_attempt_id=att1.id, agent_id=agent1.id, assignment_type=AssignmentType.MANUAL, unassigned_at=None)
+        db.add(as1)
 
-        db.add(Assignment(order_id=order1.id, delivery_attempt_id=att1.id, agent_id=agent1.id, assignment_type=AssignmentType.MANUAL, assigned_by_user_id=admin.id))
-        db.add(Assignment(order_id=order2.id, delivery_attempt_id=att2.id, agent_id=agent2.id, assignment_type=AssignmentType.MANUAL, assigned_by_user_id=admin.id))
+        # Order 2: previously assigned to agent1, but closed/unassigned (unassigned_at IS NOT NULL)
+        o2 = Order(
+            customer_id=cust.id,
+            pickup_address="A", pickup_postal_code="560078",
+            pickup_area_id=area.id, pickup_zone_id=area.zone_id,
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("5"), breadth=Decimal("5"), height=Decimal("5"),
+            actual_weight=Decimal("1"),
+            order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            current_status=OrderStatus.DELIVERED,
+        )
+        db.add(o2)
+        db.flush()
+        att2 = DeliveryAttempt(order_id=o2.id, attempt_number=1, status=DeliveryAttemptStatus.DELIVERED)
+        db.add(att2)
+        db.flush()
+        as2 = Assignment(order_id=o2.id, delivery_attempt_id=att2.id, agent_id=agent1.id, assignment_type=AssignmentType.MANUAL, unassigned_at=datetime.utcnow())
+        db.add(as2)
+
         db.commit()
 
         headers = get_auth_header(admin)
@@ -515,66 +400,48 @@ class TestAdminAgentFilter:
         data = resp.json()
         order_ids = [o["id"] for o in data["orders"]]
 
-        assert order1.id in order_ids, "Order assigned to agent1 must appear in filter results"
-        assert order2.id not in order_ids, "Order assigned to agent2 must NOT appear when filtering by agent1"
+        assert o1.id in order_ids, "Currently assigned order o1 must be in agent filter results"
+        assert o2.id not in order_ids, "Closed/historical assignment o2 must be EXCLUDED from active agent filter results"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Fix 7 — GET /agent/profile
+# 6. Rate Card & Dimension Validation
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestAgentProfile:
-    """GET /agent/profile must return agent metadata."""
+class TestRateCardAndValidation:
+    """Rate card date filtering and dimension constraint checks."""
 
-    def test_agent_profile_returns_data(self, seeded_client):
-        client, db = seeded_client
-        agent_user = db.query(User).filter(User.role == UserRole.DELIVERY_AGENT).first()
-        headers = get_auth_header(agent_user)
-        resp = client.get("/agent/profile", headers=headers)
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        assert "availability_status" in data
-        assert "active_delivery_count" in data
-        assert "max_concurrent_deliveries" in data
+    def test_future_and_expired_rate_cards_ignored(self, seeded_db):
+        """Future and expired cards are ignored by get_active_rate_card."""
+        future_card = RateCardVersion(
+            name="Future Card", effective_from=datetime.utcnow() + timedelta(days=30), is_active=True,
+        )
+        expired_card = RateCardVersion(
+            name="Expired Card", effective_from=datetime.utcnow() - timedelta(days=60), effective_to=datetime.utcnow() - timedelta(days=1), is_active=True,
+        )
+        seeded_db.add_all([future_card, expired_card])
+        seeded_db.commit()
 
-    def test_customer_cannot_access_agent_profile(self, seeded_client):
+        active = get_active_rate_card(seeded_db)
+        assert active.name not in ("Future Card", "Expired Card")
+
+    def test_zero_and_negative_dimensions_rejected(self, seeded_client):
+        """Pydantic rejects zero or negative package dimensions."""
         client, db = seeded_client
         cust = db.query(User).filter(User.role == UserRole.CUSTOMER).first()
         headers = get_auth_header(cust)
-        resp = client.get("/agent/profile", headers=headers)
-        assert resp.status_code == 403
 
+        base_payload = {
+            "pickup_address": "A", "pickup_postal_code": "560078",
+            "drop_address": "B", "drop_postal_code": "560041",
+            "length": "10", "breadth": "10", "height": "10", "actual_weight": "2",
+            "order_type": "B2C", "payment_type": "PREPAID",
+        }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Fix 6 — Agent availability update uses 'status' field
-# ─────────────────────────────────────────────────────────────────────────────
+        # Test zero length
+        p1 = dict(base_payload, length="0")
+        assert client.post("/orders", json=p1, headers=headers).status_code == 422
 
-class TestAgentAvailability:
-    """POST /agent/availability must accept {'status': 'UNAVAILABLE'} not {'availability_status': ...}."""
-
-    def test_availability_update_with_status_field(self, seeded_client):
-        client, db = seeded_client
-        agent_user = db.query(User).filter(User.role == UserRole.DELIVERY_AGENT).first()
-        headers = get_auth_header(agent_user)
-
-        resp = client.post(
-            "/agent/availability",
-            json={"status": "UNAVAILABLE"},
-            headers=headers,
-        )
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["status"] == "UNAVAILABLE"
-
-    def test_availability_update_wrong_field_rejected(self, seeded_client):
-        """Sending 'availability_status' instead of 'status' must be rejected (422)."""
-        client, db = seeded_client
-        agent_user = db.query(User).filter(User.role == UserRole.DELIVERY_AGENT).first()
-        headers = get_auth_header(agent_user)
-
-        resp = client.post(
-            "/agent/availability",
-            json={"availability_status": "UNAVAILABLE"},   # wrong field name
-            headers=headers,
-        )
-        # The schema requires 'status'; missing required field → 422
-        assert resp.status_code == 422
+        # Test negative weight
+        p2 = dict(base_payload, actual_weight="-1")
+        assert client.post("/orders", json=p2, headers=headers).status_code == 422

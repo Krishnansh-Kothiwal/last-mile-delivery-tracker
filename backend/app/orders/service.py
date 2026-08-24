@@ -254,25 +254,32 @@ def reschedule_order(
     db.commit()
     db.refresh(reschedule)
 
-    # Fix #10: Attempt auto-assignment immediately after reschedule.
-    # Reuse existing dispatch engine — failure is non-fatal (order stays CONFIRMED).
-    from app.dispatch.engine import auto_assign_order
+    # Attempt auto-assignment immediately after reschedule.
+    # Reuse existing dispatch engine — no eligible agent is non-fatal.
+    from app.dispatch.engine import auto_assign_order, NoEligibleAgentException
     try:
-        auto_assign_order(db, order=order, admin_user_id=customer_id)
-    except Exception:
-        # No eligible agents found or assignment failed — emit audit event and leave CONFIRMED
+        auto_assign_order(
+            db,
+            order=order,
+            actor_user_id=customer_id,
+            actor_role=UserRole.CUSTOMER,
+        )
+    except NoEligibleAgentException as e:
+        # No eligible agents found — emit audit event and leave CONFIRMED
         db.refresh(order)
         create_tracking_event(
             db=db,
             order_id=order.id,
-            event_type=TrackingEventType.AGENT_ASSIGNED,
+            event_type=TrackingEventType.AUTO_ASSIGNMENT_FAILED,
             actor_user_id=customer_id,
             actor_role=UserRole.CUSTOMER,
             metadata={
                 "auto_reassign_result": "no_eligible_agent",
+                "reason": e.detail if hasattr(e, "detail") else str(e),
                 "note": "Order left in CONFIRMED; admin may assign manually.",
             },
         )
+        db.commit()
         db.commit()
 
     return reschedule

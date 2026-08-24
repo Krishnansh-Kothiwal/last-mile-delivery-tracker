@@ -73,10 +73,11 @@ export default function CustomerPortal() {
   const [placingOrder, setPlacingOrder] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Tracking Modal
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [trackingEvents, setTrackingEvents] = useState<TrackingEvent[]>([]);
-  const [loadingTracking, setLoadingTracking] = useState(false);
+  // Inline Tracking & History Accordion State
+  const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
+  const [trackingMap, setTrackingMap] = useState<{ [orderId: number]: TrackingEvent[] }>({});
+  const [loadingTrackingId, setLoadingTrackingId] = useState<number | null>(null);
+  const [trackingErrorMap, setTrackingErrorMap] = useState<{ [orderId: number]: string }>({});
 
   // Reschedule Form
   const [rescheduleDate, setRescheduleDate] = useState('');
@@ -179,23 +180,33 @@ export default function CustomerPortal() {
     }
   };
 
-  const openTracking = async (order: Order) => {
-    setSelectedOrder(order);
-    setLoadingTracking(true);
-    try {
-      // Backend returns TrackingTimelineResponse: { order_id: number, events: TrackingEvent[] }
-      const data = await fetchApi<{ order_id: number; events: TrackingEvent[] }>(`/orders/${order.id}/tracking`);
-      setTrackingEvents(data.events);
-    } catch (e: any) {
-      setMessage({ type: 'error', text: `Failed to load tracking: ${e.message}` });
-    } finally {
-      setLoadingTracking(false);
+  const toggleOrderHistory = async (order: Order) => {
+    if (expandedOrderId === order.id) {
+      setExpandedOrderId(null);
+      return;
+    }
+
+    setExpandedOrderId(order.id);
+    setRescheduleDate('');
+    setRescheduleReason('');
+
+    // Fetch tracking timeline on demand if not already loaded
+    if (!trackingMap[order.id]) {
+      setLoadingTrackingId(order.id);
+      setTrackingErrorMap((prev) => ({ ...prev, [order.id]: '' }));
+      try {
+        const data = await fetchApi<{ order_id: number; events: TrackingEvent[] }>(`/orders/${order.id}/tracking`);
+        setTrackingMap((prev) => ({ ...prev, [order.id]: data.events }));
+      } catch (e: any) {
+        setTrackingErrorMap((prev) => ({ ...prev, [order.id]: e.message || 'Failed to load tracking data.' }));
+      } finally {
+        setLoadingTrackingId(null);
+      }
     }
   };
 
-  const handleRescheduleSubmit = async (e: React.FormEvent) => {
+  const handleRescheduleSubmit = async (e: React.FormEvent, orderId: number) => {
     e.preventDefault();
-    if (!selectedOrder) return;
 
     if (!rescheduleDate) {
       setMessage({ type: 'error', text: 'Please select a preferred reschedule date.' });
@@ -219,7 +230,7 @@ export default function CustomerPortal() {
 
     setRescheduling(true);
     try {
-      await fetchApi(`/orders/${selectedOrder.id}/reschedule`, {
+      await fetchApi(`/orders/${orderId}/reschedule`, {
         method: 'POST',
         body: JSON.stringify({
           requested_date: new Date(rescheduleDate).toISOString(),
@@ -227,7 +238,10 @@ export default function CustomerPortal() {
         }),
       });
       setMessage({ type: 'success', text: 'Reschedule request submitted successfully!' });
-      openTracking(selectedOrder);
+      
+      // Refresh tracking timeline for this order
+      const data = await fetchApi<{ order_id: number; events: TrackingEvent[] }>(`/orders/${orderId}/tracking`);
+      setTrackingMap((prev) => ({ ...prev, [orderId]: data.events }));
       loadOrders();
     } catch (e: any) {
       setMessage({ type: 'error', text: `Reschedule failed: ${e.message}` });
@@ -250,10 +264,13 @@ export default function CustomerPortal() {
         body: JSON.stringify({ reason: 'Customer requested cancellation' }),
       });
       setMessage({ type: 'success', text: `Order #${orderId} cancelled successfully!` });
-      loadOrders();
-      if (selectedOrder?.id === orderId) {
-        setSelectedOrder((prev) => prev ? { ...prev, current_status: 'CANCELLED' } : null);
+
+      // Refresh tracking timeline if cached
+      if (trackingMap[orderId]) {
+        const data = await fetchApi<{ order_id: number; events: TrackingEvent[] }>(`/orders/${orderId}/tracking`);
+        setTrackingMap((prev) => ({ ...prev, [orderId]: data.events }));
       }
+      loadOrders();
     } catch (e: any) {
       setMessage({ type: 'error', text: `Cancellation failed: ${e.message}` });
     } finally {
@@ -454,7 +471,7 @@ export default function CustomerPortal() {
           </div>
         </div>
 
-        {/* Right Column: Order History & Tracking */}
+        {/* Right Column: Order History & Inline Tracking Accordion */}
         <div className="lg:col-span-7 space-y-6">
           <div className="glass-panel rounded-2xl p-6 border border-gray-800 space-y-4">
             <h2 className="text-base font-bold text-white flex items-center justify-between">
@@ -469,156 +486,168 @@ export default function CustomerPortal() {
               <div className="py-12 text-center text-gray-500 text-xs">No orders placed yet. Use the Rate Calculator on the left to place your first order.</div>
             ) : (
               <div className="space-y-3">
-                {orders.map((order) => (
-                  <div
-                    key={order.id}
-                    className="glass-card p-4 rounded-xl border border-gray-800 hover:border-gray-700 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-white text-sm">Order #{order.id}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            order.current_status === 'DELIVERED'
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                              : order.current_status === 'FAILED' || order.current_status === 'AWAITING_RESCHEDULE'
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                              : order.current_status === 'CANCELLED'
-                              ? 'bg-red-500/20 text-red-300 border border-red-500/30'
-                              : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                          }`}
-                        >
-                          {order.current_status}
-                        </span>
+                {orders.map((order) => {
+                  const isExpanded = expandedOrderId === order.id;
+                  const isLoadingHistory = loadingTrackingId === order.id;
+                  const historyEvents = trackingMap[order.id] || [];
+                  const historyError = trackingErrorMap[order.id];
+                  const isCancelled = order.current_status === 'CANCELLED';
+                  const buttonLabel = isCancelled
+                    ? isExpanded ? 'View History ▲' : 'View History ▼'
+                    : isExpanded ? 'Track & Audit ▲' : 'Track & Audit ▼';
+
+                  return (
+                    <div
+                      key={order.id}
+                      className={`glass-card rounded-xl border transition overflow-hidden ${
+                        isExpanded ? 'border-blue-500/40 bg-gray-900/80' : 'border-gray-800 hover:border-gray-700'
+                      }`}
+                    >
+                      {/* Order Card Summary Header */}
+                      <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-white text-sm">Order #{order.id}</span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                order.current_status === 'DELIVERED'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : order.current_status === 'FAILED' || order.current_status === 'AWAITING_RESCHEDULE'
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                  : isCancelled
+                                  ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                                  : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                              }`}
+                            >
+                              {order.current_status}
+                            </span>
+                          </div>
+
+                          <div className="text-xs text-gray-400 flex items-center gap-2">
+                            <MapPin className="w-3.5 h-3.5 text-gray-500" /> {order.pickup_postal_code} → {order.drop_postal_code}
+                          </div>
+
+                          <div className="text-[11px] text-gray-500">
+                            {order.order_type} • {order.payment_type} • {order.actual_weight}kg • {new Date(order.created_at).toLocaleString()}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                          {['CREATED', 'CONFIRMED', 'ASSIGNED'].includes(order.current_status) && (
+                            <button
+                              onClick={() => handleCancelOrder(order.id)}
+                              disabled={cancellingOrderId === order.id}
+                              className="px-3.5 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+                            >
+                              {cancellingOrderId === order.id ? 'Cancelling...' : 'Cancel Order'}
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => toggleOrderHistory(order)}
+                            className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                              isExpanded
+                                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                                : 'bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300'
+                            }`}
+                          >
+                            {buttonLabel}
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="text-xs text-gray-400 flex items-center gap-2">
-                        <MapPin className="w-3.5 h-3.5 text-gray-500" /> {order.pickup_postal_code} → {order.drop_postal_code}
-                      </div>
+                      {/* Expanded Inline History & Audit Timeline */}
+                      {isExpanded && (
+                        <div className="border-t border-gray-800 bg-gray-950/70 p-4 space-y-4 text-xs">
+                          <div className="flex items-center justify-between border-b border-gray-800/80 pb-2">
+                            <span className="font-bold text-gray-300 flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-blue-400" />
+                              {isCancelled ? 'Audit History' : 'Tracking Timeline'} (Order #{order.id})
+                            </span>
+                            <span className="text-[10px] text-gray-500 font-mono">Immutable Audit Log</span>
+                          </div>
 
-                      <div className="text-[11px] text-gray-500">
-                        {order.order_type} • {order.payment_type} • {order.actual_weight}kg • {new Date(order.created_at).toLocaleString()}
-                      </div>
-                    </div>
+                          {isLoadingHistory ? (
+                            <div className="py-6 text-center text-gray-400 flex items-center justify-center gap-2">
+                              <RefreshCw className="w-4 h-4 animate-spin text-blue-400" /> Loading order audit history...
+                            </div>
+                          ) : historyError ? (
+                            <div className="py-3 px-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300 text-xs">
+                              {historyError}
+                            </div>
+                          ) : historyEvents.length === 0 ? (
+                            <div className="py-4 text-center text-gray-500 italic">No tracking events recorded yet.</div>
+                          ) : (
+                            <div className="relative border-l border-blue-500/30 ml-3 pl-4 space-y-4 pt-1">
+                              {historyEvents.map((ev) => (
+                                <div key={ev.id} className="relative">
+                                  <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-blue-500 ring-4 ring-gray-950" />
+                                  <div className="font-bold text-white text-xs">{ev.event_type}</div>
+                                  <div className="text-[11px] text-gray-400">
+                                    {ev.previous_status ? `${ev.previous_status} → ` : ''}
+                                    <span className="text-blue-300 font-semibold">{ev.new_status}</span>
+                                  </div>
+                                  <div className="text-[10px] text-gray-500 mt-0.5">
+                                    Actor: {ev.actor_role || 'SYSTEM'} • {new Date(ev.created_at).toLocaleString()}
+                                  </div>
+                                  {ev.metadata_json && (
+                                    <pre className="mt-1 text-[10px] font-mono bg-gray-900/90 p-2 rounded border border-gray-800/80 text-gray-300 overflow-x-auto">
+                                      {ev.metadata_json}
+                                    </pre>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
-                      {['CREATED', 'CONFIRMED', 'ASSIGNED'].includes(order.current_status) && (
-                        <button
-                          onClick={() => handleCancelOrder(order.id)}
-                          disabled={cancellingOrderId === order.id}
-                          className="px-3.5 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
-                        >
-                          {cancellingOrderId === order.id ? 'Cancelling...' : 'Cancel Order'}
-                        </button>
+                          {/* Inline Reschedule Form if FAILED or AWAITING_RESCHEDULE */}
+                          {(order.current_status === 'FAILED' || order.current_status === 'AWAITING_RESCHEDULE') && (
+                            <div className="mt-4 p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-3">
+                              <div className="text-xs font-bold text-amber-400 flex items-center gap-2">
+                                <Calendar className="w-4 h-4" /> Request Delivery Reschedule
+                              </div>
+                              <form onSubmit={(e) => handleRescheduleSubmit(e, order.id)} className="space-y-3 text-xs">
+                                <div>
+                                  <label className="block text-gray-400 mb-1">Preferred Date</label>
+                                  <input
+                                    type="date"
+                                    min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                                    max={new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]}
+                                    value={rescheduleDate}
+                                    onChange={(e) => setRescheduleDate(e.target.value)}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-gray-400 mb-1">Reschedule Reason / Instructions</label>
+                                  <input
+                                    type="text"
+                                    value={rescheduleReason}
+                                    onChange={(e) => setRescheduleReason(e.target.value)}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                                    placeholder="e.g. Please deliver after 3 PM"
+                                    required
+                                  />
+                                </div>
+                                <button
+                                  type="submit"
+                                  disabled={rescheduling}
+                                  className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-bold transition shadow-md shadow-amber-600/20"
+                                >
+                                  {rescheduling ? 'Submitting...' : 'Submit Reschedule Request'}
+                                </button>
+                              </form>
+                            </div>
+                          )}
+                        </div>
                       )}
-                      <button
-                        onClick={() => openTracking(order)}
-                        className="px-3.5 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
-                      >
-                        {order.current_status === 'CANCELLED' ? 'View History' : 'Track & Audit'} <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
-
-          {/* Tracking & Reschedule Timeline Drawer */}
-          {selectedOrder && (
-            <div className="glass-panel rounded-2xl p-6 border border-blue-500/30 space-y-6">
-              <div className="flex items-center justify-between border-b border-gray-800 pb-3">
-                <div>
-                  <h3 className="font-bold text-white text-base">
-                    {selectedOrder.current_status === 'CANCELLED' ? 'Order History' : 'Tracking Timeline'} — Order #{selectedOrder.id}
-                  </h3>
-                  <p className="text-xs text-gray-400">Append-Only Immutable Event Audit Log</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {['CREATED', 'CONFIRMED', 'ASSIGNED'].includes(selectedOrder.current_status) && (
-                    <button
-                      onClick={() => handleCancelOrder(selectedOrder.id)}
-                      disabled={cancellingOrderId === selectedOrder.id}
-                      className="px-3 py-1 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 rounded text-xs font-semibold transition"
-                    >
-                      {cancellingOrderId === selectedOrder.id ? 'Cancelling...' : 'Cancel Order'}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setSelectedOrder(null)}
-                    className="text-gray-400 hover:text-white text-xs px-2 py-1 bg-gray-800 rounded"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-
-              {loadingTracking ? (
-                <div className="py-8 text-center text-xs text-gray-400">Loading audit log...</div>
-              ) : (
-                <div className="relative border-l border-blue-500/30 ml-4 space-y-6">
-                  {trackingEvents.map((ev) => (
-                    <div key={ev.id} className="relative pl-6">
-                      <div className="absolute -left-1.5 top-1 w-3 h-3 rounded-full bg-blue-500 ring-4 ring-gray-900" />
-                      <div className="text-xs font-bold text-white">{ev.event_type}</div>
-                      <div className="text-[11px] text-gray-400">
-                        {ev.previous_status ? `${ev.previous_status} → ` : ''}<span className="text-blue-300 font-semibold">{ev.new_status}</span>
-                      </div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">
-                        Actor: {ev.actor_role || 'SYSTEM'} • {new Date(ev.created_at).toLocaleString()}
-                      </div>
-                      {ev.metadata_json && (
-                        <pre className="mt-1 text-[10px] font-mono bg-gray-900/90 p-2 rounded border border-gray-800 text-gray-300 overflow-x-auto">
-                          {ev.metadata_json}
-                        </pre>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Reschedule Section if FAILED or AWAITING_RESCHEDULE */}
-              {(selectedOrder.current_status === 'FAILED' || selectedOrder.current_status === 'AWAITING_RESCHEDULE') && (
-                <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-3">
-                  <div className="text-xs font-bold text-amber-400 flex items-center gap-2">
-                    <Calendar className="w-4 h-4" /> Request Delivery Reschedule
-                  </div>
-                  <form onSubmit={handleRescheduleSubmit} className="space-y-3 text-xs">
-                    <div>
-                      <label className="block text-gray-400 mb-1">Preferred Date</label>
-                      <input
-                        type="date"
-                        min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
-                        max={new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]}
-                        value={rescheduleDate}
-                        onChange={(e) => setRescheduleDate(e.target.value)}
-                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-gray-400 mb-1">Reschedule Reason / Instructions</label>
-                      <input
-                        type="text"
-                        value={rescheduleReason}
-                        onChange={(e) => setRescheduleReason(e.target.value)}
-                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white outline-none"
-                        placeholder="e.g. Please deliver after 3 PM"
-                        required
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={rescheduling}
-                      className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-bold transition"
-                    >
-                      {rescheduling ? 'Submitting...' : 'Submit Reschedule Request'}
-                    </button>
-                  </form>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>

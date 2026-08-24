@@ -39,7 +39,15 @@ def create_order(
         pickup_area = resolve_area_by_postal_code(db, pickup_postal_code, location_type="pickup")
         drop_area = resolve_area_by_postal_code(db, drop_postal_code, location_type="drop")
     except ServiceabilityError as e:
-        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": e.code,
+                "field": e.field,
+                "postal_code": e.postal_code,
+                "message": e.message,
+            }
+        )
     except PricingError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

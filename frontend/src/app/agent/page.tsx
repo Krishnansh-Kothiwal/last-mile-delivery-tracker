@@ -55,14 +55,15 @@ export default function AgentPortal() {
     if (!authLoading) {
       if (!user) {
         router.replace('/login');
-      } else if (user.role !== 'DELIVERY_AGENT' && user.role !== 'ADMIN') {
-        router.replace('/customer');
+      } else if (user.role !== 'DELIVERY_AGENT') {
+        if (user.role === 'ADMIN') router.replace('/admin');
+        else if (user.role === 'CUSTOMER') router.replace('/customer');
       }
     }
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (user && (user.role === 'DELIVERY_AGENT' || user.role === 'ADMIN')) {
+    if (user && user.role === 'DELIVERY_AGENT') {
       loadAgentData();
     }
   }, [user]);

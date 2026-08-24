@@ -54,38 +54,16 @@ export default function Navbar() {
             )}
 
             {user.role === 'ADMIN' && (
-              <>
-                <Link
-                  href="/admin"
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    pathname.startsWith('/admin')
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-                  }`}
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" /> Admin Control
-                </Link>
-                <Link
-                  href="/customer"
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    pathname.startsWith('/customer')
-                      ? 'bg-blue-600/30 text-blue-300 border border-blue-500/30'
-                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-                  }`}
-                >
-                  <Package className="w-3.5 h-3.5" /> Customer Portal
-                </Link>
-                <Link
-                  href="/agent"
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    pathname.startsWith('/agent')
-                      ? 'bg-blue-600/30 text-blue-300 border border-blue-500/30'
-                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-                  }`}
-                >
-                  <UserCheck className="w-3.5 h-3.5" /> Agent Portal
-                </Link>
-              </>
+              <Link
+                href="/admin"
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  pathname.startsWith('/admin')
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" /> Admin Control
+              </Link>
             )}
           </nav>
         )}

@@ -22,13 +22,17 @@ export async function fetchApi<T = any>(
 
   if (!response.ok) {
     let errorMessage = `HTTP Error ${response.status}`;
+    let errorDetail: any = null;
     try {
       const errorData = await response.json();
       if (errorData.detail) {
+        errorDetail = errorData.detail;
         if (typeof errorData.detail === 'string') {
           errorMessage = errorData.detail;
         } else if (Array.isArray(errorData.detail)) {
           errorMessage = errorData.detail.map((e: any) => e.msg || JSON.stringify(e)).join(', ');
+        } else if (typeof errorData.detail === 'object' && errorData.detail.message) {
+          errorMessage = errorData.detail.message;
         } else {
           errorMessage = JSON.stringify(errorData.detail);
         }
@@ -36,7 +40,11 @@ export async function fetchApi<T = any>(
     } catch {
       // fallback to status text
     }
-    throw new Error(errorMessage);
+    const err: any = new Error(errorMessage);
+    if (errorDetail) {
+      err.detail = errorDetail;
+    }
+    throw err;
   }
 
   return response.json();

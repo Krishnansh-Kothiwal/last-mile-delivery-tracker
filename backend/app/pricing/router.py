@@ -25,7 +25,15 @@ def get_quote(payload: QuoteRequest, db: Session = Depends(get_db)):
             payment_type=payload.payment_type,
         )
     except ServiceabilityError as e:
-        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": e.code,
+                "field": e.field,
+                "postal_code": e.postal_code,
+                "message": e.message,
+            }
+        )
     except PricingError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

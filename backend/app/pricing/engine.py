@@ -47,9 +47,11 @@ class PricingError(Exception):
 
 
 class ServiceabilityError(PricingError):
-    """Raised when a pickup or drop postal code is unsupported / unserviceable."""
-    def __init__(self, code: str, message: str):
-        self.code = code
+    """Raised when a valid 6-digit PIN code is not operational (unmapped to Area + valid Zone)."""
+    def __init__(self, field: str, postal_code: str, message: str = "We're not operational in this area yet."):
+        self.code = "UNSERVICEABLE_AREA"
+        self.field = field
+        self.postal_code = postal_code
         self.message = message
         super().__init__(message)
 
@@ -64,23 +66,21 @@ def resolve_area_by_postal_code(db: Session, postal_code: str, location_type: st
 
     location_type: 'pickup' or 'drop'
     """
+    field_name = "pickup_postal_code" if location_type == "pickup" else "drop_postal_code"
     clean_code = postal_code.strip() if postal_code else ""
 
-    area = None
-    if clean_code and POSTAL_CODE_REGEX.match(clean_code):
-        area = db.query(Area).filter(Area.postal_code == clean_code).first()
+    if not clean_code or not POSTAL_CODE_REGEX.match(clean_code):
+        raise PricingError("Enter a valid 6-digit Indian PIN code.")
 
+    area = db.query(Area).filter(Area.postal_code == clean_code).first()
     if not area:
-        if location_type == "pickup":
-            raise ServiceabilityError(
-                code="UNSERVICEABLE_PICKUP_AREA",
-                message="We don't currently pick up from this area."
-            )
-        else:
-            raise ServiceabilityError(
-                code="UNSERVICEABLE_DROP_AREA",
-                message="We don't currently deliver to this area."
-            )
+        raise ServiceabilityError(field=field_name, postal_code=clean_code)
+
+    # Validate that the Area maps to a valid Zone
+    zone = db.query(Zone).filter(Zone.id == area.zone_id).first()
+    if not zone:
+        raise ServiceabilityError(field=field_name, postal_code=clean_code)
+
     return area
 
 

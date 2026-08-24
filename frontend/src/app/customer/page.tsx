@@ -107,14 +107,15 @@ export default function CustomerPortal() {
     if (!authLoading) {
       if (!user) {
         router.replace('/login');
-      } else if (user.role !== 'CUSTOMER' && user.role !== 'ADMIN') {
-        router.replace('/agent');
+      } else if (user.role !== 'CUSTOMER') {
+        if (user.role === 'ADMIN') router.replace('/admin');
+        else if (user.role === 'DELIVERY_AGENT') router.replace('/agent');
       }
     }
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (user && (user.role === 'CUSTOMER' || user.role === 'ADMIN')) {
+    if (user && user.role === 'CUSTOMER') {
       loadOrders();
     }
   }, [user]);

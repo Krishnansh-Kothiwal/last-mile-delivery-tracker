@@ -12,6 +12,7 @@ from app.models import (
     Assignment, TrackingEvent,
 )
 from app.orders.schemas import OrderResponse, AdminOrderCreate
+from app.auth.schemas import UserResponse
 from app.orders.service import create_order
 from app.orders.state_machine import validate_transition, IllegalTransitionError
 from app.dispatch.engine import auto_assign_order, manual_assign_order
@@ -133,10 +134,26 @@ def list_cod_rules(rate_card_version_id: Optional[int] = None, db: Session = Dep
 
 @router.post("/cod-rules", response_model=CodRuleResponse, status_code=201)
 def create_cod_rule(payload: CodRuleCreate, db: Session = Depends(get_db), _: User = Depends(get_current_admin)):
+    if payload.surcharge < 0:
+        raise HTTPException(status_code=400, detail="COD surcharge cannot be negative")
     if not db.query(RateCardVersion).filter(RateCardVersion.id == payload.rate_card_version_id).first():
         raise HTTPException(status_code=400, detail="Rate card version not found")
     rule = CodRule(**payload.model_dump())
     db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    return rule
+
+
+@router.put("/cod-rules/{rule_id}", response_model=CodRuleResponse)
+def update_cod_rule(rule_id: int, payload: CodRuleCreate, db: Session = Depends(get_db), _: User = Depends(get_current_admin)):
+    rule = db.query(CodRule).filter(CodRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="COD rule not found")
+    if payload.surcharge < 0:
+        raise HTTPException(status_code=400, detail="COD surcharge cannot be negative")
+    for key, value in payload.model_dump().items():
+        setattr(rule, key, value)
     db.commit()
     db.refresh(rule)
     return rule
@@ -248,6 +265,12 @@ def admin_list_orders(
             "assigned_agent": assigned_agents_map.get(o.id),
         })
     return {"orders": results, "total": len(results)}
+
+
+@router.get("/customers", response_model=List[UserResponse])
+def list_customers(db: Session = Depends(get_db), _: User = Depends(get_current_admin)):
+    """List all registered CUSTOMER users for Admin selection."""
+    return db.query(User).filter(User.role == UserRole.CUSTOMER).all()
 
 
 @router.post("/orders", response_model=OrderResponse, status_code=201)

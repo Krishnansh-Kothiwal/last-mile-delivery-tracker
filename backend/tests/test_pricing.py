@@ -56,7 +56,7 @@ def test_inter_zone_cod_pricing(seeded_db):
 
 
 def test_invalid_postal_code_raises(seeded_db):
-    with pytest.raises(PricingError, match="We don't currently pick up from this area."):
+    with pytest.raises(PricingError, match="We're not operational in this area yet."):
         calculate_price(
             db=seeded_db,
             pickup_postal_code="999999",

@@ -57,6 +57,14 @@ def delete_zone(zone_id: int, db: Session = Depends(get_db), _: User = Depends(g
     zone = db.query(Zone).filter(Zone.id == zone_id).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
+
+    has_areas = db.query(Area).filter(Area.zone_id == zone_id).first()
+    if has_areas:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete zone with assigned areas. Reassign or remove dependent areas first."
+        )
+
     db.delete(zone)
     db.commit()
 

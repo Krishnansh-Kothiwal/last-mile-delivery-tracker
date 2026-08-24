@@ -4,7 +4,7 @@ Verifies:
 1. Valid CUSTOMER login returns JWT and /auth/me succeeds.
 2. Valid DELIVERY_AGENT login returns JWT and /auth/me succeeds.
 3. Valid ADMIN login returns JWT and /auth/me succeeds.
-4. Demo seeded accounts (rahul@example.com, deepa@agent.com, admin@deliverytracker.com) authenticate successfully.
+4. Demo accounts (rahul@example.com, deepa@agent.com, admin@deliverytracker.com) authenticate successfully.
 5. Invalid credentials (wrong password / non-existent user) returns 401 Unauthorized.
 6. CUSTOMER user is blocked from accessing /admin endpoints (403 Forbidden).
 7. DELIVERY_AGENT user is blocked from accessing /admin endpoints (403 Forbidden).
@@ -12,7 +12,7 @@ Verifies:
 """
 import pytest
 from app.models import User, UserRole
-from app.seed import seed_database
+from app.dependencies import get_password_hash
 
 
 class TestBackendAuthentication:
@@ -78,9 +78,15 @@ class TestBackendAuthentication:
         assert me["role"] == "ADMIN"
 
     def test_seeded_demo_accounts_login(self, seeded_client):
-        """Production seed accounts (rahul, deepa, admin) authenticate successfully."""
+        """Seeded demo accounts (rahul, deepa, admin) authenticate through /auth/login."""
         client, db = seeded_client
-        seed_database(db)
+
+        # Seed the exact demo users matching seed.py
+        u_cust = User(email="rahul@example.com", hashed_password=get_password_hash("customer123"), full_name="Rahul Sharma", role=UserRole.CUSTOMER)
+        u_agent = User(email="deepa@agent.com", hashed_password=get_password_hash("agent123"), full_name="Deepa Nair", role=UserRole.DELIVERY_AGENT)
+        u_admin = User(email="admin@deliverytracker.com", hashed_password=get_password_hash("admin123"), full_name="System Admin", role=UserRole.ADMIN)
+        db.add_all([u_cust, u_agent, u_admin])
+        db.commit()
 
         # 1. Customer Demo
         c_resp = client.post("/auth/login", json={"email": "rahul@example.com", "password": "customer123"})
@@ -136,6 +142,7 @@ class TestBackendAuthentication:
             "email": "cust@test.com",
             "password": "pass",
         })
+        assert login_resp.status_code == 200, login_resp.text
         token = login_resp.json()["access_token"]
 
         admin_resp = client.get("/admin/agents", headers={"Authorization": f"Bearer {token}"})
@@ -150,6 +157,7 @@ class TestBackendAuthentication:
             "email": "agent@test.com",
             "password": "pass",
         })
+        assert login_resp.status_code == 200, login_resp.text
         token = login_resp.json()["access_token"]
 
         admin_resp = client.get("/admin/orders", headers={"Authorization": f"Bearer {token}"})

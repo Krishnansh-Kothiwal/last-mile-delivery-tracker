@@ -5,23 +5,24 @@ import { useAuth } from '@/context/AuthContext';
 import { fetchApi } from '@/lib/api';
 import { UserCheck, MapPin, Truck, CheckCircle2, XCircle, Navigation, RefreshCw, AlertTriangle, ArrowRight } from 'lucide-react';
 
+// Fix #5: Match the flat shape returned by GET /agent/assignments
 interface Assignment {
-  id: number;
+  assignment_id: number;
   order_id: number;
-  assignment_type: string;
+  attempt_id: number;
+  attempt_number: number | null;
+  attempt_status: string | null;
+  order_status: string;
+  pickup_address: string;
+  pickup_postal_code: string;
+  drop_address: string;
+  drop_postal_code: string;
+  actual_weight: string;
+  payment_type: string;
   assigned_at: string;
-  order: {
-    id: number;
-    pickup_address: string;
-    pickup_postal_code: string;
-    drop_address: string;
-    drop_postal_code: string;
-    current_status: string;
-    actual_weight: number;
-    payment_type: string;
-  };
 }
 
+// Fix #7: AgentProfile loaded from GET /agent/profile
 interface AgentProfile {
   id: number;
   availability_status: 'AVAILABLE' | 'UNAVAILABLE' | 'INACTIVE';
@@ -56,8 +57,13 @@ export default function AgentPortal() {
   const loadAgentData = async () => {
     setLoading(true);
     try {
-      const data = await fetchApi<Assignment[]>('/agent/assignments');
-      setAssignments(data);
+      // Fix #7: Load profile from dedicated endpoint
+      const [profileData, assignmentData] = await Promise.all([
+        fetchApi<AgentProfile>('/agent/profile'),
+        fetchApi<Assignment[]>('/agent/assignments'),
+      ]);
+      setProfile(profileData);
+      setAssignments(assignmentData);
     } catch (e: any) {
       console.error(e);
     } finally {
@@ -65,12 +71,13 @@ export default function AgentPortal() {
     }
   };
 
+  // Fix #6: Backend expects { status: "AVAILABLE" } not { availability_status: "AVAILABLE" }
   const handleToggleAvailability = async () => {
     const newStatus = profile?.availability_status === 'AVAILABLE' ? 'UNAVAILABLE' : 'AVAILABLE';
     try {
       await fetchApi('/agent/availability', {
         method: 'POST',
-        body: JSON.stringify({ availability_status: newStatus }),
+        body: JSON.stringify({ status: newStatus }),
       });
       setProfile((prev) => prev ? { ...prev, availability_status: newStatus as any } : null);
       loadAgentData();
@@ -98,6 +105,7 @@ export default function AgentPortal() {
     }
   };
 
+  // Fix #5: Use flat order_id field (not a.order.id)
   const handleStatusChange = async (orderId: number, action: 'pickup' | 'in-transit' | 'out-for-delivery' | 'deliver') => {
     try {
       await fetchApi(`/agent/orders/${orderId}/${action}`, { method: 'POST' });
@@ -172,14 +180,15 @@ export default function AgentPortal() {
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            {profile?.availability_status || 'AVAILABLE'} (Click to toggle)
+            {profile?.availability_status ?? 'Loading...'} (Click to toggle)
           </button>
         </div>
 
         <div>
           <span className="text-xs text-gray-400 block mb-1">Active Capacity</span>
           <div className="text-base font-bold text-blue-400 font-mono">
-            {assignments.filter(a => a.order.current_status !== 'DELIVERED' && a.order.current_status !== 'FAILED').length} / 5 Max Deliveries
+            {/* Fix #5: Count from flat assignment objects */}
+            {assignments.filter(a => a.order_status !== 'DELIVERED' && a.order_status !== 'FAILED').length} / {profile?.max_concurrent_deliveries ?? 5} Max Deliveries
           </div>
         </div>
       </div>
@@ -198,86 +207,87 @@ export default function AgentPortal() {
           </div>
         ) : (
           <div className="space-y-4">
-            {assignments.map(({ id: assignmentId, order }) => (
+            {/* Fix #5: Destructure from flat assignment shape */}
+            {assignments.map((a) => (
               <div
-                key={assignmentId}
+                key={a.assignment_id}
                 className="glass-card p-5 rounded-2xl border border-gray-800 hover:border-gray-700 transition space-y-4"
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-800 pb-3">
                   <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-white text-base">Order #{order.id}</span>
+                    <span className="font-mono font-bold text-white text-base">Order #{a.order_id}</span>
                     <span
                       className={`px-2.5 py-0.5 rounded-md text-xs font-bold ${
-                        order.current_status === 'DELIVERED'
+                        a.order_status === 'DELIVERED'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : order.current_status === 'FAILED'
+                          : a.order_status === 'FAILED'
                           ? 'bg-red-500/20 text-red-300 border border-red-500/30'
                           : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
                       }`}
                     >
-                      {order.current_status}
+                      {a.order_status}
                     </span>
                   </div>
 
                   <div className="text-xs text-gray-400 font-mono">
-                    {order.payment_type} • {order.actual_weight}kg
+                    {a.payment_type} • {a.actual_weight}kg
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                   <div className="p-3 bg-gray-900/60 rounded-xl border border-gray-800/80">
                     <span className="text-gray-500 font-semibold uppercase text-[10px] block mb-1">Pickup Point</span>
-                    <p className="text-gray-200 font-medium">{order.pickup_address}</p>
-                    <span className="text-blue-400 font-mono text-[11px]">Postal Code: {order.pickup_postal_code}</span>
+                    <p className="text-gray-200 font-medium">{a.pickup_address}</p>
+                    <span className="text-blue-400 font-mono text-[11px]">Postal Code: {a.pickup_postal_code}</span>
                   </div>
 
                   <div className="p-3 bg-gray-900/60 rounded-xl border border-gray-800/80">
                     <span className="text-gray-500 font-semibold uppercase text-[10px] block mb-1">Drop Destination</span>
-                    <p className="text-gray-200 font-medium">{order.drop_address}</p>
-                    <span className="text-blue-400 font-mono text-[11px]">Postal Code: {order.drop_postal_code}</span>
+                    <p className="text-gray-200 font-medium">{a.drop_address}</p>
+                    <span className="text-blue-400 font-mono text-[11px]">Postal Code: {a.drop_postal_code}</span>
                   </div>
                 </div>
 
-                {/* State Transition Actions */}
+                {/* State Transition Actions — use a.order_id and a.order_status */}
                 <div className="pt-2 flex flex-wrap items-center gap-2">
-                  {order.current_status === 'ASSIGNED' && (
+                  {a.order_status === 'ASSIGNED' && (
                     <button
-                      onClick={() => handleStatusChange(order.id, 'pickup')}
+                      onClick={() => handleStatusChange(a.order_id, 'pickup')}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-blue-600/20"
                     >
                       Mark Picked Up <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   )}
 
-                  {order.current_status === 'PICKED_UP' && (
+                  {a.order_status === 'PICKED_UP' && (
                     <button
-                      onClick={() => handleStatusChange(order.id, 'in-transit')}
+                      onClick={() => handleStatusChange(a.order_id, 'in-transit')}
                       className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20"
                     >
                       Mark In-Transit <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   )}
 
-                  {order.current_status === 'IN_TRANSIT' && (
+                  {a.order_status === 'IN_TRANSIT' && (
                     <button
-                      onClick={() => handleStatusChange(order.id, 'out-for-delivery')}
+                      onClick={() => handleStatusChange(a.order_id, 'out-for-delivery')}
                       className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-purple-600/20"
                     >
                       Mark Out for Delivery <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   )}
 
-                  {order.current_status === 'OUT_FOR_DELIVERY' && (
+                  {a.order_status === 'OUT_FOR_DELIVERY' && (
                     <>
                       <button
-                        onClick={() => handleStatusChange(order.id, 'deliver')}
+                        onClick={() => handleStatusChange(a.order_id, 'deliver')}
                         className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
                       >
                         <CheckCircle2 className="w-4 h-4" /> Mark Delivered (Terminal)
                       </button>
 
                       <button
-                        onClick={() => setFailingOrderId(order.id)}
+                        onClick={() => setFailingOrderId(a.order_id)}
                         className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
                       >
                         <XCircle className="w-4 h-4" /> Mark Failed
@@ -285,13 +295,13 @@ export default function AgentPortal() {
                     </>
                   )}
 
-                  {order.current_status === 'DELIVERED' && (
+                  {a.order_status === 'DELIVERED' && (
                     <span className="text-emerald-400 text-xs font-bold flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4" /> Order Successfully Delivered
                     </span>
                   )}
 
-                  {order.current_status === 'FAILED' && (
+                  {a.order_status === 'FAILED' && (
                     <span className="text-red-400 text-xs font-bold flex items-center gap-1.5">
                       <AlertTriangle className="w-4 h-4" /> Delivery Marked as Failed
                     </span>
@@ -311,7 +321,7 @@ export default function AgentPortal() {
               <AlertTriangle className="w-5 h-5 text-red-400" /> Record Delivery Failure
             </h3>
             <p className="text-xs text-gray-400">
-              Provide a mandatory failure reason. Order will transition to FAILED and auto-queue for reschedule.
+              Provide a mandatory failure reason. Order will transition to FAILED → AWAITING_RESCHEDULE and auto-queue for reschedule.
             </p>
 
             <form onSubmit={handleFailOrder} className="space-y-4 text-xs">

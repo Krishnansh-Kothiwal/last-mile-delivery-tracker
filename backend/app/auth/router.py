@@ -16,25 +16,20 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # Public registration ALWAYS creates CUSTOMER accounts.
+    # The role field is not accepted from the request payload (it is absent from UserRegister).
     user = User(
         email=payload.email,
         hashed_password=get_password_hash(payload.password),
         full_name=payload.full_name,
         phone=payload.phone,
-        role=payload.role,
+        role=UserRole.CUSTOMER,
     )
     db.add(user)
     db.flush()
 
-    # Create profile based on role
-    if payload.role == UserRole.CUSTOMER:
-        db.add(CustomerProfile(user_id=user.id))
-    elif payload.role == UserRole.DELIVERY_AGENT:
-        db.add(Agent(
-            user_id=user.id,
-            availability_status=AgentAvailability.AVAILABLE,
-            max_concurrent_deliveries=5,
-        ))
+    # Always create a CustomerProfile for public registrations
+    db.add(CustomerProfile(user_id=user.id))
 
     db.commit()
     db.refresh(user)

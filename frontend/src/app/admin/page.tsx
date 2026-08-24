@@ -104,14 +104,15 @@ export default function AdminControlCenter() {
   const loadData = async () => {
     setLoading(true);
     try {
+      // /admin/orders returns OrderListResponse: { orders: Order[], total: number }
       const [oData, aData, zData, arData, rData] = await Promise.all([
-        fetchApi<Order[]>('/admin/orders'),
+        fetchApi<{ orders: Order[]; total: number }>('/admin/orders'),
         fetchApi<Agent[]>('/admin/agents'),
         fetchApi<Zone[]>('/admin/zones'),
         fetchApi<Area[]>('/admin/areas'),
         fetchApi<RateCard[]>('/admin/rate-card-versions'),
       ]);
-      setOrders(oData);
+      setOrders(oData.orders);
       setAgents(aData);
       setZones(zData);
       setAreas(arData);

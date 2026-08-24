@@ -1,10 +1,13 @@
 """Orders schemas for request/response models."""
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List
-from pydantic import BaseModel
+from typing import Optional, List, Annotated
+from pydantic import BaseModel, Field
 
 from app.models.enums import OrderType, PaymentType, OrderStatus, MovementType, DeliveryAttemptStatus
+
+# Reusable positive-decimal type — rejects zero and negative values
+PositiveDecimal = Annotated[Decimal, Field(gt=0)]
 
 
 class OrderCreate(BaseModel):
@@ -12,10 +15,10 @@ class OrderCreate(BaseModel):
     pickup_postal_code: str
     drop_address: str
     drop_postal_code: str
-    length: Decimal
-    breadth: Decimal
-    height: Decimal
-    actual_weight: Decimal
+    length: PositiveDecimal
+    breadth: PositiveDecimal
+    height: PositiveDecimal
+    actual_weight: PositiveDecimal
     order_type: OrderType
     payment_type: PaymentType
 

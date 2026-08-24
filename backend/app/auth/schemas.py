@@ -9,7 +9,8 @@ class UserRegister(BaseModel):
     password: str
     full_name: str
     phone: Optional[str] = None
-    role: UserRole = UserRole.CUSTOMER
+    # NOTE: role is intentionally omitted — public registration always creates CUSTOMER accounts.
+    # ADMIN and DELIVERY_AGENT accounts must be created through privileged back-office operations.
 
 
 class UserLogin(BaseModel):

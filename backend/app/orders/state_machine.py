@@ -10,7 +10,9 @@ ALLOWED_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
     OrderStatus.IN_TRANSIT: {OrderStatus.OUT_FOR_DELIVERY},
     OrderStatus.OUT_FOR_DELIVERY: {OrderStatus.DELIVERED, OrderStatus.FAILED},
     OrderStatus.FAILED: {OrderStatus.AWAITING_RESCHEDULE},
-    OrderStatus.AWAITING_RESCHEDULE: {OrderStatus.ASSIGNED},
+    # AWAITING_RESCHEDULE → CONFIRMED: order is re-confirmed for a new delivery attempt
+    # AWAITING_RESCHEDULE → ASSIGNED: direct path when auto-assignment immediately follows reschedule
+    OrderStatus.AWAITING_RESCHEDULE: {OrderStatus.CONFIRMED, OrderStatus.ASSIGNED},
     OrderStatus.DELIVERED: set(),  # Terminal state — no transitions
 }
 

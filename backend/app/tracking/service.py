@@ -98,3 +98,15 @@ def create_status_change_event_and_notification(
     )
 
     return event
+
+
+def schedule_notification_processing(db: Session) -> None:
+    """Process pending notifications synchronously.
+
+    Fix #14: Called via FastAPI BackgroundTasks *after* the main transaction commits.
+    This guarantees we never dispatch before the DB write is durable, and avoids
+    duplicate sends because each outbox entry transitions PENDING → SENT/FAILED
+    exactly once.
+    """
+    from app.notifications.service import process_pending_notifications
+    process_pending_notifications(db)

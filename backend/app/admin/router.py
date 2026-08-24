@@ -156,10 +156,11 @@ def delete_cod_rule(rule_id: int, db: Session = Depends(get_db), _: User = Depen
 def admin_list_orders(
     status: Optional[str] = Query(None),
     zone_id: Optional[int] = Query(None),
+    agent_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ):
-    """Admin lists all orders with optional filters."""
+    """Admin lists all orders with optional filters (status, zone_id, agent_id)."""
     query = db.query(Order).options(joinedload(Order.price_snapshot))
     if status:
         query = query.filter(Order.current_status == status)
@@ -167,6 +168,13 @@ def admin_list_orders(
         query = query.filter(
             (Order.pickup_zone_id == zone_id) | (Order.drop_zone_id == zone_id)
         )
+    if agent_id:
+        # Use a scalar subquery to avoid duplicate rows from joining assignments
+        from sqlalchemy import select as sa_select
+        agent_order_subq = sa_select(Assignment.order_id).where(
+            Assignment.agent_id == agent_id
+        ).distinct()
+        query = query.filter(Order.id.in_(agent_order_subq))
     orders = query.order_by(Order.created_at.desc()).all()
     return OrderListResponse(orders=orders, total=len(orders))
 

@@ -1,4 +1,5 @@
 """Pricing engine - deterministic zone-based pricing with Decimal math."""
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from dataclasses import dataclass
 from typing import Optional
@@ -54,15 +55,29 @@ def resolve_area_by_postal_code(db: Session, postal_code: str) -> Area:
 
 
 def get_active_rate_card(db: Session) -> RateCardVersion:
-    """Get the currently active rate card version."""
+    """Get the currently active rate card version.
+
+    Requires:
+      - is_active = True
+      - effective_from <= now
+      - effective_to IS NULL OR effective_to > now
+
+    When multiple cards satisfy the window, the one with the most recent
+    effective_from is selected (latest-wins versioning).
+    """
+    now = datetime.utcnow()
     card = (
         db.query(RateCardVersion)
-        .filter(RateCardVersion.is_active == True)
+        .filter(
+            RateCardVersion.is_active == True,  # noqa: E712
+            RateCardVersion.effective_from <= now,
+            (RateCardVersion.effective_to == None) | (RateCardVersion.effective_to > now),  # noqa: E711
+        )
         .order_by(RateCardVersion.effective_from.desc())
         .first()
     )
     if not card:
-        raise PricingError("No active rate card found")
+        raise PricingError("No active rate card found for the current date")
     return card
 
 

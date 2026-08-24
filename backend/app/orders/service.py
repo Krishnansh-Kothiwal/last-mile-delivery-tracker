@@ -159,7 +159,7 @@ def reschedule_order(
     requested_date: Optional[datetime] = None,
     reason: Optional[str] = None,
 ) -> RescheduleRequest:
-    """Reschedule a failed delivery — creates a new delivery attempt."""
+    """Reschedule a failed delivery — creates a new delivery attempt and attempts auto-assignment."""
     # Order must be in AWAITING_RESCHEDULE
     if order.current_status != OrderStatus.AWAITING_RESCHEDULE:
         raise HTTPException(
@@ -199,7 +199,7 @@ def reschedule_order(
         customer_id=customer_id,
         requested_date=requested_date,
         reason=reason,
-        status=RescheduleStatus.APPROVED,  # Auto-approve for now
+        status=RescheduleStatus.APPROVED,  # Auto-approve
         processed_at=datetime.utcnow(),
     )
     db.add(reschedule)
@@ -224,7 +224,7 @@ def reschedule_order(
     db.add(new_attempt)
     db.flush()
 
-    # Create tracking events
+    # Tracking: reschedule requested
     create_tracking_event(
         db=db,
         order_id=order.id,
@@ -237,6 +237,7 @@ def reschedule_order(
         metadata={"reason": reason, "requested_date": str(requested_date)},
     )
 
+    # Transition AWAITING_RESCHEDULE → CONFIRMED (new attempt ready for dispatch)
     create_status_change_event_and_notification(
         db=db,
         order=order,
@@ -248,10 +249,31 @@ def reschedule_order(
         delivery_attempt_id=new_attempt.id,
         metadata={"attempt_number": next_attempt_number},
     )
-
-    # Move order back to CONFIRMED so it can be assigned again
     order.current_status = OrderStatus.CONFIRMED
 
     db.commit()
     db.refresh(reschedule)
+
+    # Fix #10: Attempt auto-assignment immediately after reschedule.
+    # Reuse existing dispatch engine — failure is non-fatal (order stays CONFIRMED).
+    from app.dispatch.engine import auto_assign_order
+    try:
+        auto_assign_order(db, order=order, admin_user_id=customer_id)
+    except Exception:
+        # No eligible agents found or assignment failed — emit audit event and leave CONFIRMED
+        db.refresh(order)
+        create_tracking_event(
+            db=db,
+            order_id=order.id,
+            event_type=TrackingEventType.AGENT_ASSIGNED,
+            actor_user_id=customer_id,
+            actor_role=UserRole.CUSTOMER,
+            metadata={
+                "auto_reassign_result": "no_eligible_agent",
+                "note": "Order left in CONFIRMED; admin may assign manually.",
+            },
+        )
+        db.commit()
+
     return reschedule
+

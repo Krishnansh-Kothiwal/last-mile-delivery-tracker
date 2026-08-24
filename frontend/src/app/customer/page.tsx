@@ -94,8 +94,9 @@ export default function CustomerPortal() {
   const loadOrders = async () => {
     setLoadingOrders(true);
     try {
-      const data = await fetchApi<Order[]>('/orders');
-      setOrders(data);
+      // Backend returns OrderListResponse: { orders: Order[], total: number }
+      const data = await fetchApi<{ orders: Order[]; total: number }>('/orders');
+      setOrders(data.orders);
     } catch (e: any) {
       console.error(e);
     } finally {
@@ -168,8 +169,9 @@ export default function CustomerPortal() {
     setSelectedOrder(order);
     setLoadingTracking(true);
     try {
-      const events = await fetchApi<TrackingEvent[]>(`/orders/${order.id}/tracking`);
-      setTrackingEvents(events);
+      // Backend returns TrackingTimelineResponse: { order_id: number, events: TrackingEvent[] }
+      const data = await fetchApi<{ order_id: number; events: TrackingEvent[] }>(`/orders/${order.id}/tracking`);
+      setTrackingEvents(data.events);
     } catch (e: any) {
       alert(`Failed to load tracking: ${e.message}`);
     } finally {

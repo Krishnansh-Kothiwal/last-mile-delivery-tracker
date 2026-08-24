@@ -1,6 +1,6 @@
 """Customer orders router."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
@@ -12,6 +12,7 @@ from app.orders.schemas import (
 )
 from app.orders.service import create_order, confirm_order, reschedule_order
 from app.tracking.schemas import TrackingEventResponse
+from app.tracking.service import schedule_notification_processing
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ router = APIRouter()
 @router.post("", response_model=OrderResponse, status_code=201)
 def create_customer_order(
     payload: OrderCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_customer),
 ):
@@ -39,6 +41,8 @@ def create_customer_order(
         actor_user_id=current_user.id,
         actor_role=UserRole.CUSTOMER,
     )
+    # Fix #14: dispatch notifications after the transaction commits
+    background_tasks.add_task(schedule_notification_processing, db)
     return order
 
 
@@ -75,6 +79,7 @@ def get_order(
 @router.post("/{order_id}/confirm", response_model=OrderResponse)
 def confirm_customer_order(
     order_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_customer),
 ):
@@ -85,13 +90,16 @@ def confirm_customer_order(
     ).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    return confirm_order(db, order, current_user.id)
+    result = confirm_order(db, order, current_user.id)
+    background_tasks.add_task(schedule_notification_processing, db)
+    return result
 
 
 @router.post("/{order_id}/reschedule", response_model=RescheduleResponse)
 def reschedule_customer_order(
     order_id: int,
     payload: RescheduleCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_customer),
 ):
@@ -102,10 +110,12 @@ def reschedule_customer_order(
     ).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    return reschedule_order(
+    result = reschedule_order(
         db=db,
         order=order,
         customer_id=current_user.id,
         requested_date=payload.requested_date,
         reason=payload.reason,
     )
+    background_tasks.add_task(schedule_notification_processing, db)
+    return result

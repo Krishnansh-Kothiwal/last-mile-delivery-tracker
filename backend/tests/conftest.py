@@ -119,7 +119,26 @@ def client(db_session):
     return TestClient(app)
 
 
+@pytest.fixture
+def seeded_client(seeded_db):
+    """FastAPI TestClient backed by the seeded in-memory database.
+
+    Returns a (TestClient, session) tuple so that tests can use both the HTTP client
+    and the seeded DB session without pytest creating two independent seeded_db instances.
+
+    Usage::
+
+        def test_something(seeded_client):
+            client, db = seeded_client
+            user = db.query(User).filter(...).first()
+            headers = get_auth_header(user)
+            resp = client.post("/some/endpoint", json={...}, headers=headers)
+    """
+    return TestClient(app), seeded_db
+
+
 def get_auth_header(user: User) -> dict:
     """Helper to create Auth header for a given user."""
-    token = create_access_token({"sub": user.id, "role": user.role.value})
+    # jose JWT library requires 'sub' to be a string (RFC 7519 §4.1.2)
+    token = create_access_token({"sub": str(user.id), "role": user.role.value})
     return {"Authorization": f"Bearer {token}"}

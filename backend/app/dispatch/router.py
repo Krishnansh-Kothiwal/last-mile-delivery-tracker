@@ -1,6 +1,6 @@
 """Delivery agent router - operational interface."""
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
@@ -11,7 +11,7 @@ from app.models import (
     OrderStatus, TrackingEventType, UserRole,
 )
 from app.orders.state_machine import validate_transition, IllegalTransitionError
-from app.tracking.service import create_status_change_event_and_notification
+from app.tracking.service import create_status_change_event_and_notification, create_tracking_event, schedule_notification_processing
 from app.dispatch.schemas import AgentAvailabilityUpdate, AgentLocationUpdate, FailDeliveryRequest
 
 router = APIRouter()
@@ -45,6 +45,37 @@ def _get_assigned_attempt(db: Session, order_id: int, agent_id: int) -> Delivery
     return attempt
 
 
+def _close_active_assignment(db: Session, order_id: int, agent_id: int) -> None:
+    """Close any active assignment for this order+agent by setting unassigned_at."""
+    assignment = (
+        db.query(Assignment)
+        .filter(
+            Assignment.order_id == order_id,
+            Assignment.agent_id == agent_id,
+            Assignment.unassigned_at == None,  # noqa: E711
+        )
+        .first()
+    )
+    if assignment:
+        assignment.unassigned_at = datetime.utcnow()
+
+
+@router.get("/profile")
+def get_agent_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_agent),
+):
+    """Return the current agent's profile details."""
+    agent = _get_agent_profile(db, current_user)
+    return {
+        "id": agent.id,
+        "availability_status": agent.availability_status.value,
+        "active_delivery_count": agent.active_delivery_count,
+        "max_concurrent_deliveries": agent.max_concurrent_deliveries,
+        "last_location_update": str(agent.last_location_update) if agent.last_location_update else None,
+    }
+
+
 @router.get("/assignments")
 def list_assignments(
     db: Session = Depends(get_db),
@@ -55,7 +86,7 @@ def list_assignments(
     assignments = (
         db.query(Assignment)
         .options(joinedload(Assignment.order), joinedload(Assignment.delivery_attempt))
-        .filter(Assignment.agent_id == agent.id, Assignment.unassigned_at == None)
+        .filter(Assignment.agent_id == agent.id, Assignment.unassigned_at == None)  # noqa: E711
         .all()
     )
     results = []
@@ -68,7 +99,11 @@ def list_assignments(
             "attempt_status": a.delivery_attempt.status.value if a.delivery_attempt else None,
             "order_status": a.order.current_status.value if a.order else None,
             "pickup_address": a.order.pickup_address if a.order else None,
+            "pickup_postal_code": a.order.pickup_postal_code if a.order else None,
             "drop_address": a.order.drop_address if a.order else None,
+            "drop_postal_code": a.order.drop_postal_code if a.order else None,
+            "actual_weight": str(a.order.actual_weight) if a.order else None,
+            "payment_type": a.order.payment_type.value if a.order else None,
             "assigned_at": str(a.assigned_at),
         })
     return results
@@ -184,23 +219,39 @@ def out_for_delivery_order(order_id: int, db: Session = Depends(get_db), current
 
 
 @router.post("/orders/{order_id}/deliver")
-def deliver_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_agent)):
+def deliver_order(order_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_agent)):
+    """Deliver an order — mark DELIVERED, close assignment, decrement agent workload."""
     agent = _get_agent_profile(db, current_user)
-    result = _agent_transition(db, order_id, current_user, OrderStatus.DELIVERED, DeliveryAttemptStatus.DELIVERED, TrackingEventType.DELIVERED)
+    result = _agent_transition(
+        db, order_id, current_user,
+        OrderStatus.DELIVERED, DeliveryAttemptStatus.DELIVERED, TrackingEventType.DELIVERED,
+    )
+    # Fix #9: Close active assignment on delivery
+    _close_active_assignment(db, order_id, agent.id)
     # Decrement agent workload
     agent.active_delivery_count = max(0, agent.active_delivery_count - 1)
     db.commit()
+    background_tasks.add_task(schedule_notification_processing, db)
     return result
 
 
 @router.post("/orders/{order_id}/fail")
 def fail_delivery(
+    background_tasks: BackgroundTasks,
     order_id: int,
     payload: FailDeliveryRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_agent),
 ):
-    """Report a failed delivery — atomically marks attempt failed, creates events, queues notification."""
+    """Report a failed delivery.
+
+    Fix #8: persists the full two-step transition sequence:
+        OUT_FOR_DELIVERY → FAILED  (tracking event: DELIVERY_FAILED)
+        FAILED → AWAITING_RESCHEDULE  (tracking event: auto-queued for reschedule)
+
+    Both events are committed atomically in a single transaction.
+    Fix #9: closes the active assignment by setting unassigned_at.
+    """
     agent = _get_agent_profile(db, current_user)
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
@@ -208,6 +259,7 @@ def fail_delivery(
 
     attempt = _get_assigned_attempt(db, order_id, agent.id)
 
+    # Step 1: Validate OUT_FOR_DELIVERY → FAILED
     try:
         validate_transition(order.current_status, OrderStatus.FAILED)
     except IllegalTransitionError as e:
@@ -215,28 +267,45 @@ def fail_delivery(
 
     previous_status = order.current_status.value
 
-    # Atomically: mark attempt FAILED → order AWAITING_RESCHEDULE → tracking event → notification
+    # Mark attempt as failed
     attempt.status = DeliveryAttemptStatus.FAILED
     attempt.failure_reason = payload.failure_reason
     attempt.completed_at = datetime.utcnow()
 
-    # FAILED → AWAITING_RESCHEDULE is automatic
-    order.current_status = OrderStatus.AWAITING_RESCHEDULE
-
-    # Decrement agent workload
-    agent.active_delivery_count = max(0, agent.active_delivery_count - 1)
-
+    # Transition 1: Order → FAILED (persisted)
+    order.current_status = OrderStatus.FAILED
     create_status_change_event_and_notification(
         db=db,
         order=order,
         event_type=TrackingEventType.DELIVERY_FAILED,
         previous_status=previous_status,
-        new_status=OrderStatus.AWAITING_RESCHEDULE.value,
+        new_status=OrderStatus.FAILED.value,
         actor_user_id=current_user.id,
         actor_role=UserRole.DELIVERY_AGENT,
         delivery_attempt_id=attempt.id,
         metadata={"failure_reason": payload.failure_reason},
     )
 
+    # Transition 2: FAILED → AWAITING_RESCHEDULE (automatic, same transaction)
+    order.current_status = OrderStatus.AWAITING_RESCHEDULE
+    create_status_change_event_and_notification(
+        db=db,
+        order=order,
+        event_type=TrackingEventType.RESCHEDULE_REQUESTED,
+        previous_status=OrderStatus.FAILED.value,
+        new_status=OrderStatus.AWAITING_RESCHEDULE.value,
+        actor_user_id=current_user.id,
+        actor_role=UserRole.DELIVERY_AGENT,
+        delivery_attempt_id=attempt.id,
+        metadata={"failure_reason": payload.failure_reason, "auto_queued": True},
+    )
+
+    # Fix #9: Close active assignment
+    _close_active_assignment(db, order_id, agent.id)
+
+    # Decrement agent workload
+    agent.active_delivery_count = max(0, agent.active_delivery_count - 1)
+
     db.commit()
+    background_tasks.add_task(schedule_notification_processing, db)
     return {"order_id": order.id, "status": order.current_status.value, "attempt_status": "FAILED"}

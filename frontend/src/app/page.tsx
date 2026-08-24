@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import { Package, UserCheck, ShieldCheck, ArrowRight, Zap, MapPin, Scale, Clock, LogIn } from 'lucide-react';
 
 export default function LandingPage() {
   const { user } = useAuth();
@@ -16,106 +17,128 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="bg-[#F7F5F2] min-h-[calc(100vh-4rem)] flex flex-col justify-center py-12 px-4 sm:px-8 font-sans">
-      <div className="max-w-4xl mx-auto text-center space-y-6">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-600 text-xs font-semibold">
-          <span className="material-symbols-outlined text-base fill-1">local_shipping</span>
-          <span>LogisticsPro Operations System</span>
+    <div className="space-y-12 py-6">
+      {/* Hero Section */}
+      <div className="text-center space-y-4 max-w-3xl mx-auto">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold">
+          <Zap className="w-3.5 h-3.5" /> Full-Stack Modular Monolith Logistics Engine
         </div>
-
-        <h1 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tight leading-tight">
-          Last-Mile Delivery & Fleet Tracker
+        <h1 className="text-4xl sm:text-5xl font-black tracking-tight bg-gradient-to-r from-white via-blue-100 to-gray-400 bg-clip-text text-transparent">
+          Last-Mile Delivery Tracker
         </h1>
-
-        <p className="text-gray-600 text-base sm:text-lg max-w-2xl mx-auto font-medium">
-          Deterministic pricing, zone-based Haversine dispatching, and immutable tracking events for Bengaluru urban logistics.
+        <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
+          Deterministic pricing, zone-based Haversine dispatching, and append-only immutable tracking events for urban logistics.
         </p>
 
-        <div className="pt-4 flex justify-center gap-4 flex-wrap">
+        <div className="pt-2">
           <Link
             href={getPortalLink()}
-            className="h-12 px-8 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-base font-semibold flex items-center gap-2 shadow-sm transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs transition shadow-lg shadow-blue-600/30"
           >
             {user ? (
-              <>
-                Go to My Console ({user.role})
-                <span className="material-symbols-outlined text-lg">arrow_forward</span>
-              </>
+              <>Go to My Portal ({user.role}) <ArrowRight className="w-4 h-4" /></>
             ) : (
-              <>
-                Sign In to Console
-                <span className="material-symbols-outlined text-lg">arrow_forward</span>
-              </>
+              <>Sign In to Access Portals <LogIn className="w-4 h-4" /></>
             )}
           </Link>
-          {!user && (
-            <Link
-              href="/register"
-              className="h-12 px-8 bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 rounded-md text-base font-semibold flex items-center gap-2 shadow-sm transition-colors"
-            >
-              Create Customer Account
-            </Link>
-          )}
         </div>
       </div>
 
-      {/* Role Cards */}
-      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
-        {/* Customer */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col justify-between gap-6 shadow-sm hover:border-blue-600 transition-all">
+      {/* Role Feature Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Customer Card */}
+        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group hover:border-blue-500/40 transition-all flex flex-col justify-between">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all" />
           <div>
-            <div className="w-12 h-12 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mb-4">
-              <span className="material-symbols-outlined text-2xl">request_quote</span>
+            <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 mb-4">
+              <Package className="w-6 h-6" />
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Customer Portal</h3>
-            <p className="text-gray-600 text-sm leading-relaxed">
-              Calculate instant quotes, inspect price breakdowns, confirm orders, track live audit events, and manage delivery reschedules.
+            <h3 className="text-lg font-bold text-white mb-2">Customer Portal</h3>
+            <p className="text-gray-400 text-xs leading-relaxed mb-6">
+              Calculate instant price quotes, freeze immutable rate snapshots, place orders, and track deliveries with live audit logs.
             </p>
           </div>
           <Link
             href={user ? '/customer' : '/login'}
-            className="text-blue-600 font-semibold text-sm flex items-center gap-1 hover:text-blue-700"
+            className="w-full py-2.5 px-4 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
           >
-            Access Customer Portal <span className="material-symbols-outlined text-base">arrow_forward</span>
+            {user && user.role === 'CUSTOMER' ? 'Go to Customer Portal' : 'Customer Sign In'} <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 
-        {/* Delivery Agent */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col justify-between gap-6 shadow-sm hover:border-blue-600 transition-all">
+        {/* Agent Card */}
+        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group hover:border-emerald-500/40 transition-all flex flex-col justify-between">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl group-hover:bg-emerald-500/20 transition-all" />
           <div>
-            <div className="w-12 h-12 rounded-lg bg-green-50 border border-green-200 text-green-700 flex items-center justify-center mb-4">
-              <span className="material-symbols-outlined text-2xl">local_shipping</span>
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4">
+              <UserCheck className="w-6 h-6" />
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Agent Portal</h3>
-            <p className="text-gray-600 text-sm leading-relaxed">
-              Toggle availability status, stream GPS location updates, accept assigned orders, and execute legal status transitions.
+            <h3 className="text-lg font-bold text-white mb-2">Delivery Agent Portal</h3>
+            <p className="text-gray-400 text-xs leading-relaxed mb-6">
+              Toggle availability, stream location coordinates, accept dispatched orders, and update delivery statuses in real-time.
             </p>
           </div>
           <Link
             href={user ? '/agent' : '/login'}
-            className="text-blue-600 font-semibold text-sm flex items-center gap-1 hover:text-blue-700"
+            className="w-full py-2.5 px-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
           >
-            Access Agent Console <span className="material-symbols-outlined text-base">arrow_forward</span>
+            {user && user.role === 'DELIVERY_AGENT' ? 'Go to Agent Portal' : 'Agent Sign In'} <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 
-        {/* Admin */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col justify-between gap-6 shadow-sm hover:border-blue-600 transition-all">
+        {/* Admin Card */}
+        <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group hover:border-purple-500/40 transition-all flex flex-col justify-between">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl group-hover:bg-purple-500/20 transition-all" />
           <div>
-            <div className="w-12 h-12 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mb-4">
-              <span className="material-symbols-outlined text-2xl">dashboard</span>
+            <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 mb-4">
+              <ShieldCheck className="w-6 h-6" />
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Admin Console</h3>
-            <p className="text-gray-600 text-sm leading-relaxed">
-              Manage Bengaluru postal codes, zones, rate cards, trigger automatic Haversine dispatching, and manual agent assignment.
+            <h3 className="text-lg font-bold text-white mb-2">Admin Control Center</h3>
+            <p className="text-gray-400 text-xs leading-relaxed mb-6">
+              Manage zones, areas & rate cards, trigger automatic Haversine dispatching, and perform audited status overrides.
             </p>
           </div>
           <Link
             href={user ? '/admin' : '/login'}
-            className="text-blue-600 font-semibold text-sm flex items-center gap-1 hover:text-blue-700"
+            className="w-full py-2.5 px-4 bg-purple-600/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
           >
-            Access Admin Console <span className="material-symbols-outlined text-base">arrow_forward</span>
+            {user && user.role === 'ADMIN' ? 'Go to Admin Control' : 'Admin Sign In'} <ArrowRight className="w-4 h-4" />
           </Link>
+        </div>
+      </div>
+
+      {/* Feature Highlights Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
+        <div className="glass-card p-4 rounded-xl flex items-start gap-3">
+          <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400"><Scale className="w-5 h-5" /></div>
+          <div>
+            <h4 className="text-xs font-bold text-white">Deterministic Pricing</h4>
+            <p className="text-[11px] text-gray-400 mt-0.5">Volumetric vs actual weight, intra/inter zone pricing & frozen price snapshots.</p>
+          </div>
+        </div>
+
+        <div className="glass-card p-4 rounded-xl flex items-start gap-3">
+          <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400"><MapPin className="w-5 h-5" /></div>
+          <div>
+            <h4 className="text-xs font-bold text-white">Haversine Dispatch</h4>
+            <p className="text-[11px] text-gray-400 mt-0.5">Auto-assignment algorithm evaluating distance, workload penalties & zone tie-breakers.</p>
+          </div>
+        </div>
+
+        <div className="glass-card p-4 rounded-xl flex items-start gap-3">
+          <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400"><Clock className="w-5 h-5" /></div>
+          <div>
+            <h4 className="text-xs font-bold text-white">Append-Only Audit Log</h4>
+            <p className="text-[11px] text-gray-400 mt-0.5">Immutable tracking events recording every state transition & admin override.</p>
+          </div>
+        </div>
+
+        <div className="glass-card p-4 rounded-xl flex items-start gap-3">
+          <div className="p-2 bg-amber-500/10 rounded-lg text-amber-400"><Zap className="w-5 h-5" /></div>
+          <div>
+            <h4 className="text-xs font-bold text-white">Notification Outbox</h4>
+            <p className="text-[11px] text-gray-400 mt-0.5">Transactional outbox pattern guaranteeing email/SMS notifications on state changes.</p>
+          </div>
         </div>
       </div>
     </div>

@@ -4,7 +4,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import Navbar from '@/components/Navbar';
 
 export const metadata: Metadata = {
-  title: 'LogisticsPro | Last-Mile Delivery Operations Console',
+  title: 'Last-Mile Delivery Tracker | Logistics System',
   description: 'Deterministic pricing, zone-based dispatching, and immutable tracking system.',
 };
 
@@ -14,25 +14,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="light">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body className="bg-[#F7F5F2] text-gray-900 font-sans antialiased selection:bg-blue-600 selection:text-white min-h-screen flex flex-col">
+    <html lang="en">
+      <body className="antialiased selection:bg-blue-600 selection:text-white">
         <AuthProvider>
           <Navbar />
-          <div className="flex-1 w-full">
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             {children}
-          </div>
+          </main>
         </AuthProvider>
       </body>
     </html>

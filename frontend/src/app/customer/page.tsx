@@ -515,7 +515,7 @@ export default function CustomerPortal() {
                         onClick={() => openTracking(order)}
                         className="px-3.5 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
                       >
-                        Track & Audit <ChevronRight className="w-3.5 h-3.5" />
+                        {order.current_status === 'CANCELLED' ? 'View History' : 'Track & Audit'} <ChevronRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -529,7 +529,9 @@ export default function CustomerPortal() {
             <div className="glass-panel rounded-2xl p-6 border border-blue-500/30 space-y-6">
               <div className="flex items-center justify-between border-b border-gray-800 pb-3">
                 <div>
-                  <h3 className="font-bold text-white text-base">Tracking Timeline — Order #{selectedOrder.id}</h3>
+                  <h3 className="font-bold text-white text-base">
+                    {selectedOrder.current_status === 'CANCELLED' ? 'Order History' : 'Tracking Timeline'} — Order #{selectedOrder.id}
+                  </h3>
                   <p className="text-xs text-gray-400">Append-Only Immutable Event Audit Log</p>
                 </div>
                 <div className="flex items-center gap-2">

@@ -115,6 +115,44 @@ def rank_candidates(
     return candidates
 
 
+def explain_no_eligible_agents_reason(db: Session) -> str:
+    """Analyze all DB agents to return a useful, specific failure reason.
+    
+    Distinguishes:
+    - no available agents
+    - agents at capacity
+    - agents with missing/stale location
+    """
+    cutoff = datetime.utcnow() - timedelta(minutes=LOCATION_STALENESS_MINUTES)
+    all_agents = db.query(Agent).all()
+    if not all_agents:
+        return "No delivery agents registered in the system."
+
+    available_agents = [a for a in all_agents if a.availability_status == AgentAvailability.AVAILABLE]
+    if not available_agents:
+        return "No agents are currently AVAILABLE for dispatch."
+
+    capacity_agents = [a for a in available_agents if a.active_delivery_count < a.max_concurrent_deliveries]
+    if not capacity_agents:
+        return f"All available agents ({len(available_agents)}) are at maximum delivery capacity."
+
+    stale_or_missing = [
+        a for a in capacity_agents 
+        if a.last_location_update is None or a.last_location_update < cutoff
+    ]
+    if stale_or_missing:
+        missing_cnt = sum(1 for a in stale_or_missing if a.last_location_update is None)
+        stale_cnt = sum(1 for a in stale_or_missing if a.last_location_update is not None and a.last_location_update < cutoff)
+        details = []
+        if missing_cnt > 0:
+            details.append(f"{missing_cnt} with missing GPS location")
+        if stale_cnt > 0:
+            details.append(f"{stale_cnt} with stale GPS location (>30m old)")
+        return f"Available agents exist with capacity, but GPS location is invalid: {', '.join(details)}."
+
+    return "No eligible agents available for assignment."
+
+
 from fastapi import HTTPException
 
 
@@ -157,7 +195,8 @@ def auto_assign_order(
     # Stage A: Eligibility
     eligible_agents = get_eligible_agents(db)
     if not eligible_agents:
-        raise NoEligibleAgentException("No eligible agents available for assignment")
+        reason = explain_no_eligible_agents_reason(db)
+        raise NoEligibleAgentException(f"No eligible agents available for assignment. Reason: {reason}")
 
     # Stage B: Ranking
     candidates = rank_candidates(
@@ -166,7 +205,8 @@ def auto_assign_order(
         order.pickup_zone_id,
     )
     if not candidates:
-        raise NoEligibleAgentException("No eligible agents with valid locations found")
+        reason = explain_no_eligible_agents_reason(db)
+        raise NoEligibleAgentException(f"No eligible agents with valid locations found. Reason: {reason}")
 
     # Select best candidate
     selected = candidates[0]

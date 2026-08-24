@@ -19,9 +19,29 @@ def seed_database():
     """Seed the database with deterministic Bengaluru demo data."""
     db = SessionLocal()
     try:
-        # Check if already seeded
+        # Check if already seeded; if so, refresh agent GPS timestamps to ensure immediate eligibility
         if db.query(User).first():
-            print("Database already seeded. Skipping.")
+            now = datetime.utcnow()
+            agents = db.query(Agent).all()
+            for agent in agents:
+                agent.last_location_update = now
+                latest_loc = (
+                    db.query(AgentLocation)
+                    .filter(AgentLocation.agent_id == agent.id)
+                    .order_by(AgentLocation.recorded_at.desc())
+                    .first()
+                )
+                if latest_loc:
+                    latest_loc.recorded_at = now
+                else:
+                    db.add(AgentLocation(
+                        agent_id=agent.id,
+                        latitude=12.9100,
+                        longitude=77.5950,
+                        recorded_at=now,
+                    ))
+            db.commit()
+            print("[OK] Database already seeded — updated seeded agents' GPS timestamps to current time.")
             return
 
         now = datetime.utcnow()

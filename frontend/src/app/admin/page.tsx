@@ -66,6 +66,9 @@ interface Agent {
   active_delivery_count: number;
   max_concurrent_deliveries: number;
   last_location_update?: string;
+  is_location_fresh?: boolean;
+  location_status?: string;
+  dispatch_readiness?: string;
   active_assignments: ActiveAssignment[];
 }
 
@@ -493,27 +496,61 @@ export default function AdminControlCenter() {
                 >
                   {/* Card header — always visible */}
                   <div className="p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-white">{ag.full_name || `Agent #${ag.id}`}</span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        ag.availability_status === 'AVAILABLE'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : ag.availability_status === 'UNAVAILABLE'
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                          : 'bg-gray-700 text-gray-400'
-                      }`}>
-                        {ag.availability_status}
-                      </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-white text-sm">{ag.full_name || `Agent #${ag.id}`}</span>
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        {/* 1. Availability Status */}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          ag.availability_status === 'AVAILABLE'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : ag.availability_status === 'UNAVAILABLE'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            : 'bg-gray-700 text-gray-400'
+                        }`}>
+                          {ag.availability_status}
+                        </span>
+                        {/* 2. Dispatch & GPS Readiness */}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          ag.dispatch_readiness === 'READY_FOR_DISPATCH'
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            : ag.dispatch_readiness === 'AT_CAPACITY'
+                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                            : ag.dispatch_readiness === 'LOCATION_STALE'
+                            ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                            : ag.dispatch_readiness === 'LOCATION_REQUIRED'
+                            ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                            : 'bg-gray-800 text-gray-400'
+                        }`}>
+                          {ag.dispatch_readiness === 'READY_FOR_DISPATCH'
+                            ? 'Ready for Dispatch'
+                            : ag.dispatch_readiness === 'AT_CAPACITY'
+                            ? 'At Capacity'
+                            : ag.dispatch_readiness === 'LOCATION_STALE'
+                            ? 'Location Stale'
+                            : ag.dispatch_readiness === 'LOCATION_REQUIRED'
+                            ? 'Location Required'
+                            : ag.dispatch_readiness || 'Offline'}
+                        </span>
+                      </div>
                     </div>
+
                     <div className="text-gray-400">{ag.email || '—'}</div>
                     <div className="text-blue-400 font-mono">
                       Workload: {assignmentCount} / {ag.max_concurrent_deliveries} active
                     </div>
-                    {ag.last_location_update && (
-                      <div className="text-gray-600 text-[10px]">
-                        Last GPS: {new Date(ag.last_location_update).toLocaleString()}
-                      </div>
-                    )}
+
+                    <div className="text-[10px]">
+                      {ag.last_location_update ? (
+                        <span className={ag.is_location_fresh === false ? 'text-red-400 font-semibold' : 'text-gray-400'}>
+                          Last GPS: {new Date(ag.last_location_update).toLocaleString()}
+                          {ag.is_location_fresh === false && ' (Stale >30m)'}
+                        </span>
+                      ) : (
+                        <span className="text-red-400 font-semibold">
+                          Last GPS: Location Required (No GPS recorded)
+                        </span>
+                      )}
+                    </div>
 
                     {/* Expand/collapse toggle */}
                     <button
@@ -641,7 +678,7 @@ export default function AdminControlCenter() {
                   <option value="">-- Choose Agent --</option>
                   {agents.map((ag) => (
                     <option key={ag.id} value={ag.id}>
-                      {ag.full_name || `Agent #${ag.id}`} — {ag.active_delivery_count}/{ag.max_concurrent_deliveries} active — {ag.availability_status}
+                      {ag.full_name || `Agent #${ag.id}`} — {ag.active_delivery_count}/{ag.max_concurrent_deliveries} active — {ag.availability_status} {ag.is_location_fresh ? '(GPS Ready)' : '(Location Stale)'}
                     </option>
                   ))}
                 </select>

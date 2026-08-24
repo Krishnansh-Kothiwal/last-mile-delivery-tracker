@@ -1,5 +1,5 @@
 """Delivery agent router - operational interface."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
@@ -70,6 +70,16 @@ def get_agent_profile(
     agent = db.query(Agent).options(joinedload(Agent.user)).filter(Agent.user_id == current_user.id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent profile not found")
+    now = datetime.utcnow()
+    cutoff = now - timedelta(minutes=30)
+    is_fresh = bool(agent.last_location_update and agent.last_location_update >= cutoff)
+    if agent.last_location_update is None:
+        loc_status = "LOCATION_REQUIRED"
+    elif not is_fresh:
+        loc_status = "LOCATION_STALE"
+    else:
+        loc_status = "LOCATION_FRESH"
+
     return {
         "id": agent.id,
         "user_id": agent.user_id,
@@ -80,6 +90,8 @@ def get_agent_profile(
         "max_concurrent_deliveries": agent.max_concurrent_deliveries,
         "current_zone_id": agent.current_zone_id,
         "last_location_update": str(agent.last_location_update) if agent.last_location_update else None,
+        "is_location_fresh": is_fresh,
+        "location_status": loc_status,
     }
 
 

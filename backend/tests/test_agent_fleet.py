@@ -175,3 +175,75 @@ class TestAgentFleetAssignments:
         for key in ("full_name", "email", "availability_status",
                     "max_concurrent_deliveries", "active_assignments"):
             assert key in agent2_data, f"Missing expected key in agent response: {key}"
+
+
+class TestAgentLocationEligibility:
+    """Tests for agent location freshness and failure reason distinction."""
+
+    def test_seeded_agents_eligible_immediately(self, seeded_client):
+        """Seeded agents must have fresh location timestamps and be READY_FOR_DISPATCH immediately."""
+        client, db = seeded_client
+        admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
+
+        resp = client.get("/admin/agents", headers=get_auth_header(admin))
+        assert resp.status_code == 200
+        data = resp.json()
+
+        for ag in data:
+            assert ag["is_location_fresh"] is True
+            assert ag["location_status"] == "LOCATION_FRESH"
+            assert ag["dispatch_readiness"] == "READY_FOR_DISPATCH"
+
+    def test_auto_assign_failure_distinguishes_reasons(self, seeded_db):
+        """Auto assign failure distinguishes UNAVAILABLE, AT_CAPACITY, and STALE_LOCATION."""
+        from datetime import datetime, timedelta
+        from app.dispatch.engine import auto_assign_order, NoEligibleAgentException
+        from app.models import Area
+
+        admin = seeded_db.query(User).filter(User.role == UserRole.ADMIN).first()
+        area_jp = seeded_db.query(Area).filter(Area.postal_code == "560078").first()
+
+        order = Order(
+            customer_id=admin.id,
+            pickup_address="A", pickup_postal_code="560078",
+            pickup_area_id=area_jp.id, pickup_zone_id=area_jp.zone_id,
+            drop_address="B", drop_postal_code="560041",
+            length=Decimal("10"), breadth=Decimal("10"), height=Decimal("10"),
+            actual_weight=Decimal("2"),
+            order_type=OrderType.B2C, payment_type=PaymentType.PREPAID,
+            current_status=OrderStatus.CONFIRMED,
+        )
+        seeded_db.add(order)
+        seeded_db.commit()
+
+        # Scenario 1: All agents UNAVAILABLE
+        agents = seeded_db.query(Agent).all()
+        for a in agents:
+            a.availability_status = AgentAvailability.UNAVAILABLE
+        seeded_db.commit()
+
+        with pytest.raises(NoEligibleAgentException) as exc1:
+            auto_assign_order(seeded_db, order, admin_user_id=admin.id)
+        assert "No agents are currently AVAILABLE" in exc1.value.detail
+
+        # Scenario 2: Agents AVAILABLE but AT_CAPACITY
+        for a in agents:
+            a.availability_status = AgentAvailability.AVAILABLE
+            a.active_delivery_count = a.max_concurrent_deliveries
+        seeded_db.commit()
+
+        with pytest.raises(NoEligibleAgentException) as exc2:
+            auto_assign_order(seeded_db, order, admin_user_id=admin.id)
+        assert "maximum delivery capacity" in exc2.value.detail
+
+        # Scenario 3: Agents AVAILABLE with capacity, but location is STALE (>30m old)
+        stale_time = datetime.utcnow() - timedelta(minutes=45)
+        for a in agents:
+            a.active_delivery_count = 0
+            a.last_location_update = stale_time
+        seeded_db.commit()
+
+        with pytest.raises(NoEligibleAgentException) as exc3:
+            auto_assign_order(seeded_db, order, admin_user_id=admin.id)
+        assert "GPS location is invalid" in exc3.value.detail or "stale GPS location" in exc3.value.detail
+

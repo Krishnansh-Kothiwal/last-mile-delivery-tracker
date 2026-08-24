@@ -429,8 +429,31 @@ def admin_list_agents(db: Session = Depends(get_db), _: User = Depends(get_curre
         }
         assignments_by_agent[asgn.agent_id].append(entry)
 
-    return [
-        {
+    now = datetime.utcnow()
+    cutoff = now - timedelta(minutes=30)
+
+    results = []
+    for a in agents:
+        active_cnt = len(assignments_by_agent[a.id])
+        is_fresh = bool(a.last_location_update and a.last_location_update >= cutoff)
+        
+        if a.last_location_update is None:
+            loc_status = "LOCATION_REQUIRED"
+        elif not is_fresh:
+            loc_status = "LOCATION_STALE"
+        else:
+            loc_status = "LOCATION_FRESH"
+
+        if a.availability_status.value != "AVAILABLE":
+            readiness = "UNAVAILABLE"
+        elif active_cnt >= a.max_concurrent_deliveries:
+            readiness = "AT_CAPACITY"
+        elif not is_fresh:
+            readiness = loc_status
+        else:
+            readiness = "READY_FOR_DISPATCH"
+
+        results.append({
             "id": a.id,
             "user_id": a.user_id,
             "full_name": a.user.full_name if a.user else None,
@@ -438,10 +461,12 @@ def admin_list_agents(db: Session = Depends(get_db), _: User = Depends(get_curre
             "availability_status": a.availability_status.value,
             "current_zone_id": a.current_zone_id,
             # Use live-queried count so workload == len(active_assignments)
-            "active_delivery_count": len(assignments_by_agent[a.id]),
+            "active_delivery_count": active_cnt,
             "max_concurrent_deliveries": a.max_concurrent_deliveries,
             "last_location_update": str(a.last_location_update) if a.last_location_update else None,
+            "is_location_fresh": is_fresh,
+            "location_status": loc_status,
+            "dispatch_readiness": readiness,
             "active_assignments": assignments_by_agent[a.id],
-        }
-        for a in agents
-    ]
+        })
+    return results

@@ -55,48 +55,51 @@ export default function LoginPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center text-gray-400 text-xs">
+      <div className="min-h-[60vh] flex items-center justify-center text-gray-500 text-sm font-medium">
         Verifying authentication state...
       </div>
     );
   }
 
   return (
-    <div className="max-w-md mx-auto py-8 px-4 space-y-6">
-      {/* Header */}
+    <div className="max-w-md mx-auto py-10 px-4 space-y-6">
+      {/* Stitch Header */}
       <div className="text-center space-y-2">
-        <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-          Sign In to Delivery Tracker
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 mb-1">
+          <Package className="w-6 h-6" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
+          LogisticsPro Sign In
         </h1>
-        <p className="text-gray-400 text-xs sm:text-sm">
-          Enter your account credentials to access your portal.
+        <p className="text-gray-600 text-sm">
+          Enter your credentials to access your operations portal.
         </p>
       </div>
 
       {/* Error Alert Box */}
       {error && (
-        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold flex items-center gap-3">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm font-medium flex items-center gap-3 shadow-sm">
+          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Main Login Form */}
-      <div className="glass-panel p-6 rounded-2xl border border-gray-800 space-y-5">
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+      {/* Main Login Form matching Stitch light card */}
+      <div className="bg-white p-6 sm:p-8 rounded-xl border border-gray-200 shadow-sm space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4 text-sm">
           <div>
-            <label className="block text-gray-300 font-semibold mb-1.5" htmlFor="email-input">
+            <label className="block text-gray-700 font-semibold mb-1.5" htmlFor="email-input">
               Email Address
             </label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-gray-500 absolute left-3 top-3" />
+              <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
               <input
                 id="email-input"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
-                className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-9 pr-3 py-2.5 text-white outline-none focus:border-blue-500 transition"
+                className="w-full bg-white border border-gray-300 rounded-lg pl-10 pr-3 py-2.5 text-gray-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
                 autoFocus
                 required
               />
@@ -104,24 +107,24 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-gray-300 font-semibold mb-1.5" htmlFor="password-input">
+            <label className="block text-gray-700 font-semibold mb-1.5" htmlFor="password-input">
               Password
             </label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-gray-500 absolute left-3 top-3" />
+              <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
               <input
                 id="password-input"
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-9 pr-10 py-2.5 text-white outline-none focus:border-blue-500 transition"
+                className="w-full bg-white border border-gray-300 rounded-lg pl-10 pr-10 py-2.5 text-gray-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3 text-gray-500 hover:text-gray-300 transition"
+                className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 transition"
                 title={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -132,7 +135,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white rounded-xl font-bold transition shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-semibold transition shadow-sm flex items-center justify-center gap-2"
           >
             {submitting ? (
               <span>Signing In...</span>
@@ -143,10 +146,10 @@ export default function LoginPage() {
             )}
           </button>
 
-          <div className="pt-2 text-center border-t border-gray-800">
+          <div className="pt-3 text-center border-t border-gray-100">
             <Link
               href="/register"
-              className="text-xs text-blue-400 hover:text-blue-300 font-semibold transition"
+              className="text-xs text-blue-600 hover:text-blue-700 font-semibold transition"
             >
               New customer? Create an account
             </Link>
@@ -154,11 +157,11 @@ export default function LoginPage() {
         </form>
       </div>
 
-      {/* Demo Accounts Helper Section */}
-      <div className="glass-panel p-5 rounded-2xl border border-gray-800 space-y-3 text-xs">
-        <div className="font-bold text-gray-300 flex items-center justify-between">
+      {/* Demo Accounts Helper Section - EXACT WORKING CREDENTIALS */}
+      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-3 text-xs">
+        <div className="font-bold text-gray-800 flex items-center justify-between">
           <span>Demo Account Credentials</span>
-          <span className="text-[10px] text-blue-400 font-normal">Click to fill</span>
+          <span className="text-[11px] text-blue-600 font-medium">Click to fill</span>
         </div>
 
         <div className="grid grid-cols-1 gap-2">
@@ -166,54 +169,54 @@ export default function LoginPage() {
           <button
             type="button"
             onClick={() => fillDemoAccount('rahul@example.com', 'customer123')}
-            className="p-3 bg-gray-900/80 hover:bg-gray-800 border border-gray-800 hover:border-blue-500/40 rounded-xl text-left transition flex items-center justify-between group"
+            className="p-3 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg text-left transition flex items-center justify-between group"
           >
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 bg-blue-500/10 text-blue-400 rounded-lg">
+              <div className="p-1.5 bg-blue-100 text-blue-700 rounded-md">
                 <Package className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-white group-hover:text-blue-300">Customer Demo</div>
-                <div className="text-[11px] text-gray-400">rahul@example.com / customer123</div>
+                <div className="font-bold text-gray-900 group-hover:text-blue-700">Customer Demo</div>
+                <div className="text-[11px] text-gray-500">rahul@example.com / customer123</div>
               </div>
             </div>
-            <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded font-mono">Fill</span>
+            <span className="text-[11px] bg-blue-600 text-white px-2.5 py-1 rounded font-semibold">Fill</span>
           </button>
 
           {/* Agent Demo */}
           <button
             type="button"
             onClick={() => fillDemoAccount('deepa@agent.com', 'agent123')}
-            className="p-3 bg-gray-900/80 hover:bg-gray-800 border border-gray-800 hover:border-emerald-500/40 rounded-xl text-left transition flex items-center justify-between group"
+            className="p-3 bg-gray-50 hover:bg-green-50 border border-gray-200 hover:border-green-300 rounded-lg text-left transition flex items-center justify-between group"
           >
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg">
+              <div className="p-1.5 bg-green-100 text-green-700 rounded-md">
                 <UserCheck className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-white group-hover:text-emerald-300">Delivery Agent Demo</div>
-                <div className="text-[11px] text-gray-400">deepa@agent.com / agent123</div>
+                <div className="font-bold text-gray-900 group-hover:text-green-700">Delivery Agent Demo</div>
+                <div className="text-[11px] text-gray-500">deepa@agent.com / agent123</div>
               </div>
             </div>
-            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono">Fill</span>
+            <span className="text-[11px] bg-green-600 text-white px-2.5 py-1 rounded font-semibold">Fill</span>
           </button>
 
           {/* Admin Demo */}
           <button
             type="button"
             onClick={() => fillDemoAccount('admin@deliverytracker.com', 'admin123')}
-            className="p-3 bg-gray-900/80 hover:bg-gray-800 border border-gray-800 hover:border-purple-500/40 rounded-xl text-left transition flex items-center justify-between group"
+            className="p-3 bg-gray-50 hover:bg-purple-50 border border-gray-200 hover:border-purple-300 rounded-lg text-left transition flex items-center justify-between group"
           >
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 bg-purple-500/10 text-purple-400 rounded-lg">
+              <div className="p-1.5 bg-purple-100 text-purple-700 rounded-md">
                 <ShieldCheck className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-white group-hover:text-purple-300">Admin Demo</div>
-                <div className="text-[11px] text-gray-400">admin@deliverytracker.com / admin123</div>
+                <div className="font-bold text-gray-900 group-hover:text-purple-700">Admin Demo</div>
+                <div className="text-[11px] text-gray-500">admin@deliverytracker.com / admin123</div>
               </div>
             </div>
-            <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-mono">Fill</span>
+            <span className="text-[11px] bg-purple-600 text-white px-2.5 py-1 rounded font-semibold">Fill</span>
           </button>
         </div>
       </div>
